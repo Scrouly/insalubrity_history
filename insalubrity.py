@@ -1,6 +1,6 @@
 """
-vredn_calc.py
-=============
+insalubrity.py
+==============
 Полный перенос логики VREDN_01.PRG (Clipper/FoxPro) на Python.
 Формирует файл Excel (RSV) со специализированной шапкой,
 итоговой формулой и автоподбором ширины колонок по содержимому.
@@ -9,7 +9,7 @@ vredn_calc.py
     pip install dbfread pandas openpyxl
 
 Запуск (пример):
-    python vredn_calc.py --data-dir ./dbf --month 5 --year 2026 --stavka1 0.29 --stavka2 0.41 --stavka3 0.58
+    python insalubrity.py --data-dir ./dbf --month 5 --year 2026 --stavka1 0.29 --stavka2 0.41 --stavka3 0.58
 """
 
 from __future__ import annotations
@@ -74,11 +74,16 @@ def load_dbf(path: Path, encoding: str = "cp866") -> pd.DataFrame:
 
 
 def find_table(data_dir: Path, base_name: str) -> Path:
-    """Ищет таблицу без учёта регистра расширения (.dbf/.DBF)."""
-    for candidate in (f"{base_name}.dbf", f"{base_name}.DBF"):
-        p = data_dir / candidate
-        if p.exists():
-            return p
+    """Ищет таблицу <base_name>.dbf без учёта регистра имени и расширения
+    (lschet.dbf, LSCHET.DBF, Lschet.Dbf ...). На Windows файловая система и так
+    нечувствительна к регистру, но на Linux/сетевых шарах — нет."""
+    wanted = f"{base_name}.dbf".lower()
+    try:
+        for p in Path(data_dir).iterdir():
+            if p.name.lower() == wanted and p.is_file():
+                return p
+    except OSError:
+        pass
     raise FileNotFoundError(f"Не найдена таблица '{base_name}' в {data_dir}")
 
 
@@ -220,7 +225,7 @@ def _do_run(
     )
     df = df.merge(kalend_small, on=["pr_dn", "god", "mes"], how="left", suffixes=("", "_kalend"))
 
-    # 4. Расчет sr_chas с обязательным округлением до 2 знаков (как N(5,2) в FoxPro)[cite: 1, 3]
+    # 4. Расчет sr_chas с обязательным округлением до 2 знаков (как N(5,2) в FoxPro)
     unmatched_kalend = df["kol_rd"].isna()
     if unmatched_kalend.any():
         bad_tns = sorted(set(df.loc[unmatched_kalend, "tn"].tolist()))
@@ -258,7 +263,7 @@ def _do_run(
         log(f"ВНИМАНИЕ: {zero_sr_chas.sum()} запис(ей) вредности/по средн. с sr_chas=0 "
             f"(дни не рассчитаны) — tn: {bad_tns[:20]}{' …' if len(bad_tns) > 20 else ''}")
 
-    # Дни рассчитываются делением vf на уже округлённый sr_chas[cite: 1, 3]
+    # Дни рассчитываются делением vf на уже округлённый sr_chas
     df.loc[is_vred, "vred_dni"] = df.loc[is_vred].apply(
         lambda r: fox_round(r["vf"] / r["sr_chas"]) if r["sr_chas"] > 0 else 0, axis=1
     )
@@ -293,7 +298,7 @@ def _do_run(
         log(f"ВНИМАНИЕ: {unclassified.sum()} запис(ей) вредности не удалось классифицировать по ставкам "
             f"3.1/3.2/3.3 (tar1 не совпал ни с одной из ставок) — примеры (tn, tar1): {examples}")
 
-    # 7. Подтяжка наименования должности с обрезкой до 30 символов[cite: 1]
+    # 7. Подтяжка наименования должности с обрезкой до 30 символов
     dolgn_small = dolgn[["dshifr", "dname"]].drop_duplicates(subset="dshifr")
     df = df.merge(dolgn_small, left_on="dolgn", right_on="dshifr", how="left")
     df["name"] = df["dname"].fillna("").astype(str).str[:30]

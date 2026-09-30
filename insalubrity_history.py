@@ -41,7 +41,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from app_env import install_excepthook, load_env_vars, save_env_vars
+from app_env import EnvFileError, install_excepthook, load_env_vars, save_env_vars
 from insalubrity_gui import STYLESHEET
 
 import history_reader as hr
@@ -301,7 +301,12 @@ class HistoryWindow(QMainWindow):
         self.hire_date_edit = QDateEdit()
         self.hire_date_edit.setCalendarPopup(True)
         self.hire_date_edit.setDisplayFormat("dd.MM.yyyy")
-        self.hire_date_edit.setDate(QDate(2000, 1, 1))
+        # Минимальная дата — «пустое» значение: показывает «не указана» и не может
+        # быть сохранена (раньше по умолчанию стояло 01.01.2000, и случайное
+        # «Сохранить дату» записывало её как ручную правку).
+        self.hire_date_edit.setMinimumDate(QDate(1949, 12, 31))
+        self.hire_date_edit.setSpecialValueText("не указана")
+        self.hire_date_edit.setDate(self.hire_date_edit.minimumDate())
         self.hire_date_edit.setEnabled(False)
         info_row.addWidget(self.hire_date_edit)
 
@@ -497,8 +502,20 @@ class HistoryWindow(QMainWindow):
             "OUT_DIR": self.out_dir_input.text().strip(),
             "DBF_DATA_DIR": self.data_dir_input.text().strip(),
         }
-        save_env_vars(config)
+        try:
+            save_env_vars(config)
+        except EnvFileError as exc:
+            self._warn_env_file(exc)
+            return
         self.env_data.update(config)
+
+    def _warn_env_file(self, exc: Exception) -> None:
+        """Ошибку .env показываем один раз на сообщение (reload_data зовёт запись часто)."""
+        msg = str(exc)
+        if getattr(self, "_last_env_warning", None) == msg:
+            return
+        self._last_env_warning = msg
+        QMessageBox.warning(self, "Настройки не сохранены", msg)
 
     ENV_NORM_KEYS = {3.1: "LEAVE_DAYS_31", 3.2: "LEAVE_DAYS_32", 3.3: "LEAVE_DAYS_33"}
 
@@ -519,7 +536,11 @@ class HistoryWindow(QMainWindow):
             self.ENV_NORM_KEYS[klass]: str(spin.value())
             for klass, spin in self.norm_spinboxes.items()
         }
-        save_env_vars(config)
+        try:
+            save_env_vars(config)
+        except EnvFileError as exc:
+            QMessageBox.critical(self, "Нормы не сохранены", str(exc))
+            return
         self.env_data.update(config)
         QMessageBox.information(self, "Сохранено", "Нормы доп. отпуска за вредность сохранены.")
         if self.current_tn is not None:
@@ -631,6 +652,7 @@ class HistoryWindow(QMainWindow):
             self._warn_override_file(exc)
             hire_overrides = {}
         hire_date, source = hr.get_hire_date(tn, self.employees, hire_overrides)
+        ignored_override = hr.describe_ignored_hire_override(tn, hire_overrides)
         self.current_source = source
         self.current_hire_date = hire_date
 
@@ -663,8 +685,12 @@ class HistoryWindow(QMainWindow):
             hire_label += "   ⚠ дата увольнения не распознана"
             term_note = "⚠ В карточке есть дата увольнения, но она не прошла проверку на правдоподобие — проигнорирована."
 
+        if ignored_override:
+            hire_label += "   ⚠ ручная дата отброшена"
         self.hire_source_lbl.setText(hire_label)
-        self.hire_source_lbl.setToolTip("\n".join(p for p in (early_warning, term_note) if p))
+        self.hire_source_lbl.setToolTip(
+            "\n".join(p for p in (ignored_override, early_warning, term_note) if p)
+        )
         self._early_warning = early_warning
         self._term_note = term_note
 
@@ -673,7 +699,7 @@ class HistoryWindow(QMainWindow):
         if hire_date is not None:
             self.hire_date_edit.setDate(QDate(hire_date.year, hire_date.month, hire_date.day))
         else:
-            self.hire_date_edit.setDate(QDate(2000, 1, 1))
+            self.hire_date_edit.setDate(self.hire_date_edit.minimumDate())  # «не указана»
 
         self.render_timeline(tn, hire_date, termination_date)
 
@@ -681,6 +707,9 @@ class HistoryWindow(QMainWindow):
         if self.current_tn is None:
             return
         qd = self.hire_date_edit.date()
+        if qd == self.hire_date_edit.minimumDate():
+            QMessageBox.warning(self, "Дата не указана", "Выберите дату устройства и повторите.")
+            return
         date_str = f"{qd.year():04d}-{qd.month():02d}-{qd.day():02d}"
         try:
             hr.save_hire_date_override(self.current_tn, date_str)
@@ -806,6 +835,7 @@ class HistoryWindow(QMainWindow):
     @staticmethod
     def _parse_editable_value(field: str, raw_text: str):
         if field == "bal_vredn":
+            raw_text = raw_text.replace(",", ".")  # «3,1» с русской раскладки
             if raw_text not in ("3.1", "3.2", "3.3"):
                 raise ValueError('Класс вредности должен быть одним из: 3.1, 3.2, 3.3 (или пусто — убрать правку)')
             return float(raw_text)

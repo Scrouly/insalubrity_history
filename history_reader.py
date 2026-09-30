@@ -393,6 +393,26 @@ def get_hire_date(tn: int, employees: pd.DataFrame, overrides: dict[str, str] | 
     return None, None
 
 
+def describe_ignored_hire_override(tn: int, overrides: dict[str, str] | None) -> str | None:
+    """Если ручная дата приёма для tn есть, но get_hire_date() её отбросил
+    (не распознана / раньше 1950 / в будущем) — возвращает понятное сообщение,
+    иначе None. Раньше такая правка молча игнорировалась: кадровик считал, что
+    дата применена, а таймлайн строился по DNEPR."""
+    if not overrides:
+        return None
+    raw = overrides.get(str(int(tn)))
+    if not raw:
+        return None
+    try:
+        parsed = pd.to_datetime(raw)
+        if pd.isna(parsed):
+            raise ValueError(f"дата не распознана: {raw!r}")
+        validate_hire_date(parsed.date())
+    except Exception as exc:
+        return f"Ручная дата приёма {raw!r} не принята ({exc}) — используется дата из карточки (DNEPR)."
+    return None
+
+
 def get_termination_date(tn: int, employees: pd.DataFrame, hire_date=None):
     """Возвращает (date_или_None, источник) для DATA_UVL из lschet.dbf.
 

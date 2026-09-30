@@ -308,5 +308,10 @@ def test_all_employees_build_without_errors():
     env = load_env_vars()
     data_dir = Path(env.get("DBF_DATA_DIR", "./dbf"))
     out_dir = Path(env.get("OUT_DIR", "./rsv"))
+    import pytest
+    if not hr.find_rsv_files(out_dir, log=lambda *_: None) or not any(
+        p.name.lower() == "lschet.dbf" for p in data_dir.glob("*") if data_dir.exists()
+    ):
+        pytest.skip("нет реальных данных (RSV/lschet.dbf) по путям из .env")
     assert run_all(data_dir, out_dir, quiet=False, stress_hire_dates=True) == 0, \
         "См. вывод выше — есть падения или нарушения инвариантов"

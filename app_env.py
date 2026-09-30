@@ -35,6 +35,7 @@ def app_dir() -> Path:
 
 
 ENV_FILE_PATH = app_dir() / ".env"
+CRASH_LOG_PATH = app_dir() / "crash.log"
 
 DEFAULT_ENV_CONFIG = {
     "DBF_DATA_DIR": "./dbf",
@@ -45,6 +46,15 @@ DEFAULT_ENV_CONFIG = {
     "STAVKA2": "0.41",
     "STAVKA3": "0.58",
 }
+
+class EnvFileError(Exception):
+    """.env нельзя прочитать или записать.
+
+    Раньше при ошибке чтения save_env_vars() всё равно перезаписывал файл одними
+    переданными ключами (стирая остальные, например LEAVE_DAYS_*), а ошибки
+    записи уходили в print(), которого в оконной сборке не видно.
+    """
+
 
 ENV_HEADER = "# Настройки расчёта вредности (автоматическое сохранение)\n"
 
@@ -97,7 +107,10 @@ def load_env_vars() -> dict[str, str]:
         except Exception as exc:
             print(f"Ошибка чтения .env: {exc}")
     else:
-        save_env_vars(config)
+        try:
+            save_env_vars(config)
+        except EnvFileError as exc:
+            print(exc)  # первый запуск в папке без прав записи — работаем с умолчаниями
 
     return config
 
@@ -108,20 +121,28 @@ def save_env_vars(config: dict[str, str]) -> None:
 
     Раньше функция целиком перезаписывала файл переданным словарём — из-за
     этого калькулятор стирал настройки, принадлежащие другому приложению.
-    """
-    try:
-        merged: dict[str, str] = {}
-        if ENV_FILE_PATH.exists():
-            try:
-                merged.update(_read_env_file(ENV_FILE_PATH))
-            except Exception as exc:
-                print(f"Ошибка чтения .env перед записью: {exc}")
-        merged.update({k: str(v) for k, v in config.items()})
 
-        text = ENV_HEADER + "".join(f"{k}={v}\n" for k, v in merged.items())
+    При ошибке чтения/записи бросает EnvFileError (вызывающий код показывает её
+    пользователю); при этом существующий .env остаётся нетронутым.
+    """
+    merged: dict[str, str] = {}
+    if ENV_FILE_PATH.exists():
+        try:
+            merged.update(_read_env_file(ENV_FILE_PATH))
+        except Exception as exc:
+            # НЕ перезаписываем файл, который не смогли прочитать: иначе потеряем
+            # все остальные ключи.
+            raise EnvFileError(
+                f"Не удалось прочитать {ENV_FILE_PATH}: {exc}\n"
+                f"Файл НЕ был изменён — настройки не сохранены."
+            ) from exc
+    merged.update({k: str(v) for k, v in config.items()})
+
+    text = ENV_HEADER + "".join(f"{k}={v}\n" for k, v in merged.items())
+    try:
         atomic_write_text(ENV_FILE_PATH, text)
     except Exception as exc:
-        print(f"Ошибка записи .env: {exc}")
+        raise EnvFileError(f"Не удалось записать {ENV_FILE_PATH}: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------

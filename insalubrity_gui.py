@@ -12,7 +12,7 @@ import html
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QThread, QUrl, pyqtSignal
+from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -33,9 +33,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from app_env import (  # noqa: F401  (re-export: остальные модули импортируют отсюда)
-    DEFAULT_ENV_CONFIG,
-    ENV_FILE_PATH,
+from app_env import (
+    EnvFileError,
     install_excepthook,
     load_env_vars,
     save_env_vars,
@@ -472,6 +471,12 @@ class VrednMainWindow(QMainWindow):
         self.warning_count = 0
         self.last_rsv_path: Path | None = None
         self.worker: VrednWorker | None = None
+        self._last_env_error: str | None = None
+        # Запись .env не на каждый символ, а через 0.6 с после последнего изменения.
+        self._env_timer = QTimer(self)
+        self._env_timer.setSingleShot(True)
+        self._env_timer.setInterval(600)
+        self._env_timer.timeout.connect(self.sync_env)
 
         self.init_ui()
         self.apply_env_to_ui()
@@ -786,15 +791,19 @@ class VrednMainWindow(QMainWindow):
         self.s3_input.setText(self.env_data.get("STAVKA3", "0.58"))
 
     def bind_env_auto_save(self) -> None:
-        self.data_dir_input.textChanged.connect(self.sync_env)
-        self.out_dir_input.textChanged.connect(self.sync_env)
-        self.month_combo.currentIndexChanged.connect(self.sync_env)
-        self.year_combo.currentTextChanged.connect(self.sync_env)
-        self.s1_input.textChanged.connect(self.sync_env)
-        self.s2_input.textChanged.connect(self.sync_env)
-        self.s3_input.textChanged.connect(self.sync_env)
+        self.data_dir_input.textChanged.connect(self.schedule_env_sync)
+        self.out_dir_input.textChanged.connect(self.schedule_env_sync)
+        self.month_combo.currentIndexChanged.connect(self.schedule_env_sync)
+        self.year_combo.currentTextChanged.connect(self.schedule_env_sync)
+        self.s1_input.textChanged.connect(self.schedule_env_sync)
+        self.s2_input.textChanged.connect(self.schedule_env_sync)
+        self.s3_input.textChanged.connect(self.schedule_env_sync)
+
+    def schedule_env_sync(self) -> None:
+        self._env_timer.start()  # перезапуск отсчёта при каждом изменении
 
     def sync_env(self) -> None:
+        self._env_timer.stop()
         config = {
             "DBF_DATA_DIR": self.data_dir_input.text().strip(),
             "OUT_DIR": self.out_dir_input.text().strip(),
@@ -804,7 +813,28 @@ class VrednMainWindow(QMainWindow):
             "STAVKA2": self.s2_input.text().strip(),
             "STAVKA3": self.s3_input.text().strip(),
         }
-        save_env_vars(config)  # слияние: чужие ключи (LEAVE_DAYS_*) сохраняются
+        try:
+            save_env_vars(config)  # слияние: чужие ключи (LEAVE_DAYS_*) сохраняются
+            self._last_env_error = None
+        except EnvFileError as exc:
+            msg = str(exc)
+            if msg != self._last_env_error:  # один диалог на одну и ту же ошибку
+                self._last_env_error = msg
+                QMessageBox.warning(self, "Настройки не сохранены", msg)
+
+    def closeEvent(self, event) -> None:
+        # Закрыть окно при работающем QThread = «QThread: Destroyed while thread
+        # is still running» (падение при выходе) и недописанный RSV-файл.
+        if self.worker is not None and self.worker.isRunning():
+            QMessageBox.information(
+                self, "Расчёт выполняется",
+                "Дождитесь окончания расчёта — окно можно закрыть после его завершения.",
+            )
+            event.ignore()
+            return
+        if self._env_timer.isActive():
+            self.sync_env()  # не потерять последние введённые значения
+        super().closeEvent(event)
 
     def animate_intro(self) -> None:
         # Лёгкое появление основной формы без лишних анимаций во время работы.
@@ -847,16 +877,16 @@ class VrednMainWindow(QMainWindow):
         upper = text.upper()
 
         if "ОШИБКА" in upper or "ВНИМАНИЕ" in upper:
-            color = "#ff7878"
+            color = "#C53030"
             self.warning_count += 1
         elif "ГОТОВО" in upper or "УСПЕХ" in upper:
-            color = "#59d38a"
+            color = "#276749"
         elif "КОНТРОЛЬНАЯ СУММА" in upper:
-            color = "#e6b85c"
+            color = "#B7791F"
         elif "СТАРТ" in upper or "ЗАГРУЗКА" in upper:
-            color = "#73a7ff"
+            color = "#2B6CB0"
         else:
-            color = "#b7c0cc"
+            color = "#4A5568"
 
         # Раньше текст лога вставлялся как HTML без экранирования — строки трейсбека
         # с "<module>" или "&" в путях терялись/ломали разметку лога. pre-wrap
