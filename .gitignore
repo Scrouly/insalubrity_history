@@ -1,0 +1,19 @@
+# Данные и настройки (персональные данные, свои на каждой машине)
+.env
+_env
+dbf/
+rsv/
+*.dbf
+*.DBF
+hire_dates_override.json
+month_overrides.json
+*.bak
+crash.log
+
+# Сборка и мусор
+build/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.rar
