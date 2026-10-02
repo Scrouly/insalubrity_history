@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 import re
 
-from PyQt6.QtCore import QDate, QSettings, QStringListModel, Qt, QTimer
+from PyQt6.QtCore import QDate, QEvent, QSettings, QStringListModel, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -51,6 +51,25 @@ MONTHS_RU_SHORT = [
     "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
 ]
 
+# Метка «эта ячейка — часть сетки данных» (месячные строки, ИТОГО, мини-шапка года):
+# только у таких ячеек рисуются явные вертикальные линии и подсветка колонки под курсором.
+GRID_ROLE = Qt.ItemDataRole.UserRole + 1
+
+# Единые названия колонок: и в верхней шапке, и в мини-шапке каждого рабочего года.
+# Однострочные — двухстрочный текст не влезал в шапку и обрезался; пояснения — в тултипе.
+COLUMN_TITLES = ["Год", "Месяц", "Раб. дни", "Вредн.", "Отпуск", "О/б/м", "По средн.", "Итого", "Балл", "Тариф"]
+COLUMN_TIPS = [
+    "Год", "Месяц",
+    "Рабочие дни по графику (норма месяца)",
+    "Дни работы во вредных условиях",
+    "Дни ежегодного отпуска",
+    "Отпуск без сохранения / за свой счёт (О/б/м)",
+    "Дни, оплачиваемые по среднему",
+    "Итого дней вредности за месяц (расчётное)",
+    "Класс вредности: 3.1 / 3.2 / 3.3",
+    "Тариф",
+]
+
 SOURCE_LABELS = {
     "override": "указана кадровиком вручную",
     "dnepr": "из карточки сотрудника (DNEPR)",
@@ -82,6 +101,22 @@ class CompactCellDelegate(QStyledItemDelegate):
     получается выше ячейки и вылезает за её края. Здесь у редактора свой
     компактный стиль, а геометрия принудительно равна прямоугольнику ячейки.
     """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.hover_col = -1  # колонка под курсором (подсвечивается в строках данных)
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        if not index.data(GRID_ROLE):
+            return
+        r = option.rect
+        painter.save()
+        if index.column() == self.hover_col:
+            painter.fillRect(r, QColor(49, 130, 206, 30))
+        painter.setPen(QColor("#CBD5E0"))  # явная вертикальная линия между колонками
+        painter.drawLine(r.right(), r.top(), r.right(), r.bottom())
+        painter.restore()
 
     def createEditor(self, parent, option, index):
         editor = QLineEdit(parent)
@@ -147,7 +182,7 @@ class HistoryWindow(QMainWindow):
             self.top_body.setVisible(False)
             self.top_toggle_btn.setText("▸")
             self.refresh_top_title()
-        header_state = settings.value("table/header_state")
+        header_state = settings.value("table/header_state_v2")
         if header_state is not None:
             self.table.horizontalHeader().restoreState(header_state)
 
@@ -155,7 +190,7 @@ class HistoryWindow(QMainWindow):
         settings = QSettings("Dolomit", "InsalubrityHistory")
         settings.setValue("window/geometry", self.saveGeometry())
         settings.setValue("window/state", self.saveState())
-        settings.setValue("table/header_state", self.table.horizontalHeader().saveState())
+        settings.setValue("table/header_state_v2", self.table.horizontalHeader().saveState())
         super().closeEvent(event)
 
     # ------------------------------------------------------------------
@@ -375,8 +410,7 @@ class HistoryWindow(QMainWindow):
         table_layout.addWidget(table_title)
 
         self.table = QTableWidget(0, 10)
-        column_headers = ["Год", "Месяц", "Раб. дни\n(граф.)", "Вредн\n(дни)", "Балл",
-                           "Отпуск", "О/б/м", "По средн", "Итого", "Тариф"]
+        column_headers = COLUMN_TITLES
         # Числовые колонки — вправо, текстовые (период) — влево, как в спецификации.
         self.COLUMN_ALIGN = [
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -395,6 +429,7 @@ class HistoryWindow(QMainWindow):
             item = self.table.horizontalHeaderItem(col)
             if item is not None:
                 item.setTextAlignment(int(align))
+                item.setToolTip(COLUMN_TIPS[col])
         # Interactive вместо Stretch — колонки можно тянуть мышью, а не только
         # смотреть на то, что Qt сам решил сжать. Ширины запоминаются между
         # запусками через QSettings (см. restore_window_state/closeEvent).
@@ -402,8 +437,8 @@ class HistoryWindow(QMainWindow):
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setMinimumSectionSize(64)
         header.setStretchLastSection(True)  # последняя колонка добирает остаток пустого места
-        header.setFixedHeight(44)  # запас под двухстрочные заголовки, чтобы текст не резался
-        default_widths = [70, 110, 100, 90, 70, 90, 80, 90, 90, 90]
+        header.setFixedHeight(38)
+        default_widths = [70, 110, 100, 90, 90, 80, 90, 90, 70, 90]
         for col, w in enumerate(default_widths):
             self.table.setColumnWidth(col, w)
         self.table.verticalHeader().setVisible(False)
@@ -411,7 +446,10 @@ class HistoryWindow(QMainWindow):
         self.table.setEditTriggers(
             QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed
         )
-        self.table.setItemDelegate(CompactCellDelegate(self.table))
+        self.cell_delegate = CompactCellDelegate(self.table)
+        self.table.setItemDelegate(self.cell_delegate)
+        self.table.cellEntered.connect(self._on_cell_entered)
+        self.table.viewport().installEventFilter(self)  # сброс подсветки колонки при уходе курсора
         self.table.itemChanged.connect(self.on_cell_item_changed)
         self.table.setAlternatingRowColors(False)  # чередование теперь по годам, не по строкам — см. add_month_row
         self.table.setMouseTracking(True)  # для корректного hover-подсвечивания строк
@@ -725,10 +763,20 @@ class HistoryWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Таблица
     # ------------------------------------------------------------------
-    def render_timeline(self, tn: int, hire_date, termination_date=None) -> None:
+    def render_timeline(self, tn: int, hire_date, termination_date=None, keep_collapse: bool = False) -> None:
+        # keep_collapse=True — перерисовка после правки ячейки: сохраняем, какие
+        # рабочие годы были свёрнуты/развёрнуты, и положение прокрутки. Иначе
+        # правка в любом, кроме последнего, году сворачивала бы этот год обратно.
+        prev_collapsed: dict = {}
+        scroll_pos = None
+        if keep_collapse:
+            prev_collapsed = {b["label"]: b["collapsed"] for b in getattr(self, "year_blocks", [])}
+            scroll_pos = self.table.verticalScrollBar().value()
+
         self._suppress_item_changed = True
         try:
             self.table.setRowCount(0)
+            self._set_hover_col(-1)
             self.year_blocks = []
             self.header_row_to_block = {}
 
@@ -772,9 +820,12 @@ class HistoryWindow(QMainWindow):
                 tint = self.YEAR_TINTS[i % 2]
                 bg = self.HEADER_TINTS[i % 2]
                 header_row = self.add_year_header_row(block["label"], block["month_count"], bg)
-                qt_block = {"header_row": header_row, "month_rows": [], "collapsed": False}
+                qt_block = {"label": block["label"], "header_row": header_row, "month_rows": [], "collapsed": False}
                 self.header_row_to_block[header_row] = qt_block
                 self.year_blocks.append(qt_block)
+                # Мини-шапка с названиями колонок — прямо над данными этого года.
+                # Кладём в month_rows, чтобы она сворачивалась вместе с месяцами.
+                qt_block["month_rows"].append(self.add_column_header_row())
 
                 for r in block["month_rows"]:
                     qt_block["month_rows"].append(self.add_month_row(r, tint=tint))
@@ -784,8 +835,14 @@ class HistoryWindow(QMainWindow):
             # По умолчанию сворачиваем все рабочие годы, кроме последнего (самого
             # свежего) — так видно всю историю одним взглядом на заголовки+итоги,
             # а листать помесячно нужно только тот год, что реально интересен.
-            for qt_block in self.year_blocks[:-1]:
-                self.set_block_collapsed(qt_block, True)
+            last_idx = len(self.year_blocks) - 1
+            for idx, qt_block in enumerate(self.year_blocks):
+                collapsed = prev_collapsed.get(qt_block["label"], idx < last_idx)
+                if collapsed:
+                    self.set_block_collapsed(qt_block, True)
+
+            if scroll_pos is not None:
+                self.table.verticalScrollBar().setValue(scroll_pos)
         finally:
             self._suppress_item_changed = False
 
@@ -830,7 +887,7 @@ class HistoryWindow(QMainWindow):
         # ещё ДО того, как редактор ячейки закрылся, и немедленный setRowCount(0)
         # прямо в обработчике может столкнуться с ним же.
         tn, hire_date, term_date = self.current_tn, self.current_hire_date, self.current_termination_date
-        QTimer.singleShot(0, lambda: self.render_timeline(tn, hire_date, term_date))
+        QTimer.singleShot(0, lambda: self.render_timeline(tn, hire_date, term_date, keep_collapse=True))
 
     @staticmethod
     def _parse_editable_value(field: str, raw_text: str):
@@ -847,6 +904,19 @@ class HistoryWindow(QMainWindow):
         if value < 0:
             raise ValueError("Значение не может быть отрицательным")
         return value
+
+    def _set_hover_col(self, col: int) -> None:
+        if self.cell_delegate.hover_col != col:
+            self.cell_delegate.hover_col = col
+            self.table.viewport().update()
+
+    def _on_cell_entered(self, row: int, column: int) -> None:
+        self._set_hover_col(column)
+
+    def eventFilter(self, obj, event):
+        if obj is self.table.viewport() and event.type() == QEvent.Type.Leave:
+            self._set_hover_col(-1)
+        return super().eventFilter(obj, event)
 
     def on_table_cell_clicked(self, row: int, column: int) -> None:
         block = self.header_row_to_block.get(row)
@@ -872,6 +942,27 @@ class HistoryWindow(QMainWindow):
         text = f"Рабочий год {work_year_label}   ·   {month_count} мес.   (нажмите, чтобы свернуть/развернуть)"
         return self.add_span_row("▼", text, QColor("#1A202C"), bg)
 
+    def add_column_header_row(self) -> int:
+        """Мини-шапка с названиями колонок внутри блока рабочего года: название
+        стоит рядом с данными, а не только в шапке таблицы вверху."""
+        row_idx = self.table.rowCount()
+        self.table.insertRow(row_idx)
+        self.table.setRowHeight(row_idx, 28)
+        font = QFont()
+        font.setBold(True)
+        font.setPointSizeF(max(font.pointSizeF() - 1.5, 7.0))
+        for col, title in enumerate(COLUMN_TITLES):
+            item = QTableWidgetItem(title)
+            item.setFont(font)
+            item.setForeground(QColor("#718096"))
+            item.setBackground(QColor("#F1F5F9"))
+            item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
+            item.setToolTip(COLUMN_TIPS[col])
+            item.setData(GRID_ROLE, True)
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # не редактируется и не выделяется
+            self.table.setItem(row_idx, col, item)
+        return row_idx
+
     def add_divider_row(self) -> None:
         """Тонкая полоса между блоками разных рабочих лет — чисто визуальный
         разделитель, к сворачиванию/итогам отношения не имеет."""
@@ -880,6 +971,7 @@ class HistoryWindow(QMainWindow):
         self.table.setRowHeight(row_idx, 6)
         item = QTableWidgetItem("")
         item.setBackground(QColor("#E2E8F0"))
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.table.setItem(row_idx, 0, item)
         self.table.setSpan(row_idx, 0, 1, self.table.columnCount())
 
@@ -955,8 +1047,9 @@ class HistoryWindow(QMainWindow):
     # "Итого" и "Тариф" остаются расчётными (не входят в этот словарь) —
     # это производные величины, а не исходные данные.
     EDITABLE_COLUMNS = {
-        2: "kol_rd", 3: "vred_dni", 4: "bal_vredn",
-        5: "otp_dni", 6: "otp_bud_m", 7: "po_sredn",
+        2: "kol_rd", 3: "vred_dni",
+        4: "otp_dni", 5: "otp_bud_m", 6: "po_sredn",
+        8: "bal_vredn",
     }
 
     # Подписи полей для тултипа "было / стало" у переопределённых ячеек.
@@ -1021,11 +1114,11 @@ class HistoryWindow(QMainWindow):
             month_label,
             str(round(hr._nz(r["kol_rd"]))),
             str(round(hr._nz(r["vred_dni"]))),
-            "" if r["bal_vredn_effective"] in (None,) or (isinstance(r["bal_vredn_effective"], float) and r["bal_vredn_effective"] != r["bal_vredn_effective"]) else str(r["bal_vredn_effective"]),
             str(int(hr._nz(r["otp_dni"]))),
             str(int(hr._nz(r["otp_bud_m"]))),
             str(int(hr._nz(r["po_sredn"]))),
             str(round(hr._nz(r["monthly_total"]))),
+            "" if r["bal_vredn_effective"] in (None,) or (isinstance(r["bal_vredn_effective"], float) and r["bal_vredn_effective"] != r["bal_vredn_effective"]) else str(r["bal_vredn_effective"]),
             "" if r["tar1"] in (None,) or (isinstance(r["tar1"], float) and r["tar1"] != r["tar1"]) else f'{r["tar1"]:.2f}',
         ]
         year, month = int(r["year"]), int(r["month"])
@@ -1044,6 +1137,7 @@ class HistoryWindow(QMainWindow):
 
         for col, val in enumerate(values):
             item = QTableWidgetItem(val)
+            item.setData(GRID_ROLE, True)
             field = self.EDITABLE_COLUMNS.get(col)
             is_overridden_here = field is not None and field in overridden_fields
             # Автопочинка (сейчас — только колонка kol_rd, см. fix_zero_kol_rd_months)
@@ -1130,14 +1224,16 @@ class HistoryWindow(QMainWindow):
         bold.setBold(True)
         values = [
             "ИТОГО", work_year_label, str(round(kol_rd_total)), str(round(vred_total)),
-            "", "", "", "", str(round(monthly_total)), "",
+            "", "", "", str(round(monthly_total)), "", "",
         ]
         for col, val in enumerate(values):
             item = QTableWidgetItem(val)
+            item.setData(GRID_ROLE, True)
             item.setFont(bold)
             item.setForeground(QColor("#2C5282"))
             item.setBackground(QColor("#EBF8FF"))
             item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row_idx, col, item)
 
     def add_leave_class_row(
@@ -1175,6 +1271,7 @@ class HistoryWindow(QMainWindow):
         item0.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         if tooltip:
             item0.setToolTip(tooltip)
+        item0.setFlags(item0.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.table.setItem(row_idx, 0, item0)
 
         span_item = QTableWidgetItem(span_text)
@@ -1185,6 +1282,7 @@ class HistoryWindow(QMainWindow):
         span_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         if tooltip:
             span_item.setToolTip(tooltip)
+        span_item.setFlags(span_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.table.setItem(row_idx, 1, span_item)
         self.table.setSpan(row_idx, 1, 1, self.table.columnCount() - 1)
         return row_idx
