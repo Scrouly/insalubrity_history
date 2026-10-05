@@ -512,6 +512,77 @@ def _apply_bal_vredn_ffill(result: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _vred_days_by_class(person: pd.DataFrame) -> dict[tuple[int, int], dict[float, float]]:
+    """{(год, месяц): {класс: дни вредности}} по строкам сотрудника, где класс
+    определён и дни вредности > 0."""
+    if person.empty:
+        return {}
+    cls = pd.to_numeric(person["bal_vredn"], errors="coerce").round(1)
+    days = pd.to_numeric(person["vred_dni"], errors="coerce").fillna(0)
+    mask = cls.notna() & (days > 0)
+    out: dict[tuple[int, int], dict[float, float]] = {}
+    if not mask.any():
+        return out
+    sub = pd.DataFrame({
+        "y": person.loc[mask, "file_year"].astype(int),
+        "m": person.loc[mask, "file_month"].astype(int),
+        "c": cls[mask],
+        "d": days[mask],
+    })
+    for (yy, mm, cc), dd in sub.groupby(["y", "m", "c"])["d"].sum().items():
+        out.setdefault((int(yy), int(mm)), {})[float(cc)] = float(dd)
+    return out
+
+
+def month_class_split(row) -> dict[float, float]:
+    """Разбивка дней вредности месяца по классам, если в месяце их БОЛЬШЕ ОДНОГО и
+    класс не переопределён вручную; иначе пустой словарь."""
+    overridden = row.get("overridden_fields")
+    if isinstance(overridden, dict) and "bal_vredn" in overridden:
+        return {}
+    split = row.get("vred_by_class")
+    if isinstance(split, dict) and len(split) > 1 and sum(split.values()) > 0:
+        return split
+    return {}
+
+
+def month_class_days(row) -> dict:
+    """Раскладывает дни месяца по классам: {класс: дни}; ключ None — класс не определён.
+
+    * Дни ВРЕДНОСТИ — по своим классам: в месяце со сменой класса они делятся так,
+      как пришли из RSV (при ручной правке числа дней — пропорционально).
+    * Отпуск, о/б/м и «по среднему» НЕ делятся: целиком идут в обычный класс
+      сотрудника — класс месяца (bal_vredn_effective: в месяце со сменой класса это
+      класс с большим числом дней вредности, а если строки вредности в месяце нет —
+      последний известный, перенесённый вперёд).
+
+    Дни остаются дробными — округление только в итоговом результате."""
+    total = _nz(row.get("monthly_total"))
+    if total <= 0:
+        return {}
+    vred = max(_nz(row.get("vred_dni")), 0)
+    other = total - vred
+
+    eff = pd.to_numeric(row.get("bal_vredn_effective"), errors="coerce")
+    usual = None if pd.isna(eff) else round(float(eff), 1)
+
+    out: dict = {}
+
+    def add(c, d):
+        if d:
+            out[c] = out.get(c, 0.0) + d
+
+    split = month_class_split(row)
+    if split and vred > 0:
+        s = sum(split.values())
+        for c, d in split.items():
+            add(round(float(c), 1), vred * d / s)
+    else:
+        add(usual, vred)
+    add(usual, other)
+    return out
+
+
 def build_employee_timeline(
     tn: int,
     history: pd.DataFrame,
@@ -548,6 +619,7 @@ def build_employee_timeline(
         "is_manual_override",
         "is_data_fix",
         "no_file",
+        "vred_by_class",
     ]
 
     if history.empty:
@@ -594,6 +666,16 @@ def build_employee_timeline(
         )
         grouped = grouped.set_index(["file_year", "file_month"])
 
+        # Дни вредности по КЛАССАМ внутри месяца (смена класса в середине месяца даёт
+        # несколько строк vop=49 с разным тарифом). Раньше класс месяца брался как
+        # max(), и ВСЕ дни месяца уходили в старший класс. Теперь класс месяца в
+        # колонке "Балл" — тот, на который пришлось больше дней вредности (при
+        # равенстве — старший), а полная разбивка хранится в vred_by_class.
+        split_by_month = _vred_days_by_class(person)
+        for key, split in split_by_month.items():
+            if key in grouped.index and split:
+                grouped.at[key, "bal_vredn"] = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
+
         # Тариф (tar1) берём ТОЛЬКО из строк вредности (vop=49). У строк
         # отпуска/по-среднему tar1 = sux/vf — это рубли за день, а не ставка
         # вредности, и max() по месяцу подсовывал в колонку «Тариф» именно его.
@@ -609,6 +691,9 @@ def build_employee_timeline(
         grouped = pd.DataFrame(
             columns=["kol_rd", "vred_dni", "otp_dni", "otp_bud_m", "po_sredn", "tar1", "bal_vredn"]
         )
+
+    if person.empty:
+        split_by_month = {}
 
     rows = []
     y, m = start_year, start_month
@@ -643,6 +728,7 @@ def build_employee_timeline(
                 "is_manual_override": False,
                 "is_data_fix": False,
                 "no_file": False,
+                "vred_by_class": dict(split_by_month.get((y, m), {})),
             })
         else:
             rows.append({
@@ -661,6 +747,7 @@ def build_employee_timeline(
                 # архив начинается позже). False при has_data=False — файл есть, но у
                 # сотрудника в нём нет записей.
                 "no_file": (y, m) not in periods,
+                "vred_by_class": {},
             })
         m += 1
         if m > 12:
@@ -819,7 +906,8 @@ def summarize_leave_entitlement(
     порядке), каждый с ключами:
         work_year_key, work_year_label, kol_rd_total,
         classes: [{"klass": 3.1, "days": ..., "norm": ..., "vyshlo": ...}, ...],
-        unclassified_days, polozheno_total, vyshlo_total
+        unclassified_days, mixed_class_months [(год, месяц, {класс: дни вредности})],
+        polozheno_total, vyshlo_total
     """
     if norm_days is None:
         norm_days = DEFAULT_LEAVE_NORM_DAYS
@@ -843,22 +931,23 @@ def summarize_leave_entitlement(
         if vred_total <= 0:
             continue
 
-        # Округляем класс до 1 знака, чтобы избежать сюрпризов с плавающей точкой.
-        # ВАЖНО: не строить это через .apply(lambda: ... else None) — pandas
-        # приводит результат обратно к float64, и None превращается в NaN;
-        # а NaN != NaN, из-за чего в set/dict каждый NaN попадает как
-        # отдельный "уникальный" ключ. Используем .round() напрямую — NaN
-        # остаётся NaN по всей колонке, и isna()/dropna() работают корректно.
-        # to_numeric нужен отдельно: если класс НИ РАЗУ не был определён за
-        # всю историю сотрудника, вся колонка — object/None (а не float/NaN),
-        # и .round() на такой колонке падает с TypeError.
-        rounded = pd.to_numeric(group["bal_vredn_effective"], errors="coerce").round(1)
-
+        # Дни месяца раскладываются по классам через month_class_days: дни вредности —
+        # по своим классам, отпуск/о-б-м/по среднему — целиком в обычный класс
+        # сотрудника (класс месяца). Ключи округлены до 1 знака (без сюрпризов с
+        # плавающей точкой), None — класс ещё не определён.
         class_totals: dict[float, float] = {}
-        for c in sorted(rounded.dropna().unique()):
-            class_totals[c] = float(group.loc[rounded == c, "monthly_total"].fillna(0).sum())
-
-        unclassified_days = float(group.loc[rounded.isna(), "monthly_total"].fillna(0).sum())
+        unclassified_days = 0.0
+        mixed_months = []
+        for _, month_row in group.iterrows():
+            for c, d in month_class_days(month_row).items():
+                if c is None:
+                    unclassified_days += d
+                else:
+                    class_totals[c] = class_totals.get(c, 0.0) + d
+            split = month_class_split(month_row)
+            if split:
+                mixed_months.append((int(month_row["year"]), int(month_row["month"]), dict(split)))
+        class_totals = dict(sorted(class_totals.items()))
 
         classes_breakdown = []
         polozheno_total = 0.0
@@ -890,6 +979,7 @@ def summarize_leave_entitlement(
             "kol_rd_total": kol_rd_total,
             "classes": classes_breakdown,
             "unclassified_days": unclassified_days,
+            "mixed_class_months": mixed_months,
             "days_exceed_norm": days_exceed_norm,
             "total_days": total_days,
             "polozheno_total": polozheno_total,

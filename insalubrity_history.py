@@ -1024,6 +1024,17 @@ class HistoryWindow(QMainWindow):
                 QColor("#FFFBEB"),
             )
 
+        for y_m, m_m, split in leave_entry.get("mixed_class_months", []):
+            parts = ", ".join(f"{c:.1f} — {d:.0f} дн." for c, d in sorted(split.items()))
+            usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
+            self.add_span_row(
+                "",
+                f"Смена класса в {m_m:02d}.{y_m}: дни вредности {parts} Отпуск и «по среднему» "
+                f"этого месяца отнесены к классу {usual:.1f}.",
+                QColor("#553C9A"),
+                QColor("#FAF5FF"),
+            )
+
         if len(classes) > 1:
             # Несколько классов за раб. год — показываем разбивку сложения по каждому,
             # чтобы было видно, из чего сложилось "положено" и "вышло".
@@ -1205,6 +1216,16 @@ class HistoryWindow(QMainWindow):
                     item.setBackground(tint)
                 if row_tooltip:
                     item.setToolTip(row_tooltip)
+
+            if field == "bal_vredn" and not is_overridden_here:
+                split = hr.month_class_split(r)
+                if split:
+                    parts = "; ".join(f"{c:.1f} — {d:.0f} дн." for c, d in sorted(split.items()))
+                    usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
+                    item.setToolTip(
+                        f"Смена класса в этом месяце: {parts} В ячейке показан класс с большим числом "
+                        f"дней вредности; отпуск и «по среднему» месяца относятся к нему ({usual:.1f})."
+                    )
 
             item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
 
