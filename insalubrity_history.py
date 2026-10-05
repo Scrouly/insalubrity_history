@@ -139,7 +139,7 @@ class CompactCellDelegate(QStyledItemDelegate):
 class HistoryWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("История по вредности")
+        self.setWindowTitle("Расчёт отпуска за вредность")
         self.setStyleSheet(STYLESHEET)
 
         self.env_data = load_env_vars()
@@ -209,7 +209,7 @@ class HistoryWindow(QMainWindow):
         header_row = QHBoxLayout()
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
-        title = QLabel("История по вредности")
+        title = QLabel("Расчёт отпуска за вредность")
         title.setObjectName("AppTitle")
         title.setToolTip("Поиск сотрудника по ФИО, помесячная и годовая статистика по RSV")
         title_col.addWidget(title)
@@ -1299,7 +1299,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))
-    install_excepthook("История по вредности")
+    install_excepthook("Расчёт отпуска за вредность")
 
     window = HistoryWindow()
     window.show()
