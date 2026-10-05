@@ -41,9 +41,20 @@ MONTHS_RU = [
 STAVKA_TOL = 1e-4
 
 
+FOX_ROUND_EPS = 1e-9
+
+
 def fox_round(val: float) -> int:
-    """Округление по правилам FoxPro/Clipper (к ближайшему целому)."""
-    return int(math.floor(val + 0.5))
+    """Округление к ближайшему целому, «половина — от нуля» (как ROUND() в
+    FoxPro/Clipper): 2.5 -> 3, -2.5 -> -3.
+
+    Раньше было floor(x + 0.5), из-за чего отрицательные значения (сторно,
+    корректировки) округлялись к нулю: -2.5 -> -2. Крошечная добавка FOX_ROUND_EPS
+    гасит шум чисел с плавающей точкой (22.499999999999996 вместо 22.5)."""
+    val = float(val)
+    if val < 0:
+        return -int(math.floor(-val + 0.5 + FOX_ROUND_EPS))
+    return int(math.floor(val + 0.5 + FOX_ROUND_EPS))
 
 
 def auto_fit_columns(ws, min_width: int = 6, padding: int = 3):

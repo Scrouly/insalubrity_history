@@ -1042,12 +1042,13 @@ class HistoryWindow(QMainWindow):
             vyshlo_parts = " + ".join(f'{c["vyshlo"]:.2f}' for c in classes)
             summary_text = (
                 f'Отпуск за вредность: положено {polozheno_parts} = {leave_entry["polozheno_total"]:.0f} дн., '
-                f'вышло {vyshlo_parts} = {leave_entry["vyshlo_total"]:.2f} дн.'
+                f'вышло {vyshlo_parts} = {leave_entry["vyshlo_total"]:.2f} → '
+                f'{leave_entry["vyshlo_total_rounded"]} дн.'
             )
         else:
             summary_text = (
                 f'Отпуск за вредность: положено {leave_entry["polozheno_total"]:.0f} дн., '
-                f'вышло {leave_entry["vyshlo_total"]:.2f} дн.'
+                f'вышло {leave_entry["vyshlo_total"]:.2f} → {leave_entry["vyshlo_total_rounded"]} дн.'
             )
 
         self.add_span_row("ОТПУСК", summary_text, QColor("#2C5282"), QColor("#EBF8FF"))
@@ -1261,10 +1262,11 @@ class HistoryWindow(QMainWindow):
         self, klass: float, days: float, norm: float, kol_rd_total: float, vyshlo: float,
         capped: bool = False, vyshlo_raw: float | None = None,
     ) -> None:
-        text = f'  ↳ класс {klass}: ({days:.0f} дн. × {norm:.0f}) / {kol_rd_total:.0f} раб.дн. = {vyshlo:.2f} дн. отпуска'
+        days_txt = f"{days:.2f}".rstrip("0").rstrip(".")
+        text = f'  ↳ класс {klass}: ({days_txt} дн. × {norm:.0f}) / {kol_rd_total:.0f} раб.дн. = {vyshlo:.2f} дн. отпуска'
         if capped and vyshlo_raw is not None:
             text = (
-                f'  ↳ класс {klass}: ({days:.0f} дн. × {norm:.0f}) / {kol_rd_total:.0f} раб.дн. = '
+                f'  ↳ класс {klass}: ({days_txt} дн. × {norm:.0f}) / {kol_rd_total:.0f} раб.дн. = '
                 f'{vyshlo_raw:.2f} → ограничено нормой класса: {vyshlo:.2f} дн. отпуска'
             )
         self.add_span_row(

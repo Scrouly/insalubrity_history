@@ -907,7 +907,7 @@ def summarize_leave_entitlement(
         work_year_key, work_year_label, kol_rd_total,
         classes: [{"klass": 3.1, "days": ..., "norm": ..., "vyshlo": ...}, ...],
         unclassified_days, mixed_class_months [(год, месяц, {класс: дни вредности})],
-        polozheno_total, vyshlo_total
+        polozheno_total, vyshlo_total (дробное), vyshlo_total_rounded (итог, целое)
     """
     if norm_days is None:
         norm_days = DEFAULT_LEAVE_NORM_DAYS
@@ -984,6 +984,9 @@ def summarize_leave_entitlement(
             "total_days": total_days,
             "polozheno_total": polozheno_total,
             "vyshlo_total": vyshlo_total,
+            # Итоговый результат — округлённый к ближайшему целому; расчёт выше
+            # остаётся дробным (округляется только итог, а не каждый класс/месяц).
+            "vyshlo_total_rounded": fox_round(vyshlo_total),
         })
 
     return results
