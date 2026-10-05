@@ -98,6 +98,26 @@ def find_table(data_dir: Path, base_name: str) -> Path:
     raise FileNotFoundError(f"Не найдена таблица '{base_name}' в {data_dir}")
 
 
+def warn_conflicting_duplicates(
+    df: pd.DataFrame, key: list[str], value_cols: list[str], label: str, keep: str, log=print,
+) -> int:
+    """Пишет в лог ключи, которые встречаются в таблице несколько раз С РАЗНЫМИ
+    значениями. Раньше drop_duplicates молча выбирал одну запись; одинаковые дубли
+    безвредны и не шумят. Возвращает число конфликтующих ключей."""
+    if df.empty or not df.duplicated(subset=key, keep=False).any():
+        return 0
+    dup = df[df.duplicated(subset=key, keep=False)]
+    conflicts = dup.groupby(key, dropna=False)[value_cols].nunique(dropna=False)
+    bad = conflicts[(conflicts > 1).any(axis=1)]
+    if bad.empty:
+        return 0
+    shown = [", ".join(str(x) for x in (k if isinstance(k, tuple) else (k,))) for k in bad.index[:10]]
+    log(f"ВНИМАНИЕ: {label}: {len(bad)} ключ(ей) {'+'.join(key)} встречается несколько раз с разными "
+        f"значениями — используется {'последняя' if keep == 'last' else 'первая'} запись: "
+        f"{shown}{' …' if len(bad) > 10 else ''}")
+    return len(bad)
+
+
 CALENDAR_FALLBACK_MONTHS = 12
 
 
@@ -289,6 +309,8 @@ def _do_run(
     df = svod[(svod["sux"].fillna(0) != 0) & (svod["vop"].isin(VOP_RSV))].copy()
 
     # 2. Подтяжка fio, pr_dn из lschet по tn
+    warn_conflicting_duplicates(lschet[["tn", "fio", "pr_dn"]], ["tn"], ["fio", "pr_dn"],
+                                "lschet.dbf", keep="last", log=log)
     lschet_clean = lschet[["tn", "fio", "pr_dn"]].drop_duplicates(subset="tn", keep="last")
     df = df.merge(lschet_clean, on="tn", how="left", suffixes=("", "_lschet"))
     if "pr_dn_lschet" in df.columns:
@@ -302,6 +324,9 @@ def _do_run(
             f"(ФИО не найдено) — tn: {bad_tns[:20]}{' …' if len(bad_tns) > 20 else ''}")
 
     # 3. Подтяжка из календаря по (pr_dn + god + mes из строки свода)
+    warn_conflicting_duplicates(kalend[["pr_dn", "god", "mes", "kol_rd", "fond_ch"]],
+                                ["pr_dn", "god", "mes"], ["kol_rd", "fond_ch"],
+                                "kalend.dbf", keep="first", log=log)
     kalend_small = kalend[["pr_dn", "god", "mes", "kol_rd", "fond_ch"]].drop_duplicates(
         subset=["pr_dn", "god", "mes"]
     )

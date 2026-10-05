@@ -97,27 +97,59 @@ def find_rsv_files(out_dir: Path, log=print) -> list[tuple[int, int, Path]]:
     return found
 
 
-def read_rsv_file(path: Path) -> pd.DataFrame:
+def read_rsv_file(path: Path, log=None) -> pd.DataFrame:
     """Читает строки данных (начиная с 3-й строки) из одного файла RSV.
 
-    Останавливается на первой строке без tn (колонка B) — это либо
-    строка с итоговой формулой SUM(...), либо конец данных.
+    Раньше чтение обрывалось на ПЕРВОЙ строке без tn (колонка B): пустая строка
+    в середине данных молча отрезала всё, что ниже. Теперь:
+
+    * полностью пустые строки пропускаются, чтение идёт дальше;
+    * строка без tn, но с какими-то значениями (итоговая SUM(...) или пометка) —
+      конец данных, как и раньше;
+    * если после пустой строки или после итоговой строки найдены строки с числовым
+      tn, об этом пишется предупреждение (log) — чтобы потерю данных было видно.
     """
     wb = load_workbook(path, read_only=True, data_only=True)
     try:
         ws = wb.active
-        rows = []
-        for row in ws.iter_rows(min_row=3, values_only=True):
-            tn = row[1] if len(row) > 1 else None
-            if tn is None or (isinstance(tn, str) and not tn.strip()):
-                break
-            record = {
-                col_name: (row[idx] if idx < len(row) else None)
-                for idx, col_name in enumerate(RSV_DATA_COLUMNS)
-            }
-            rows.append(record)
+        all_rows = list(ws.iter_rows(min_row=3, values_only=True))
     finally:
         wb.close()
+
+    def is_blank(v) -> bool:
+        return v is None or (isinstance(v, str) and not v.strip())
+
+    def has_numeric_tn(row) -> bool:
+        tn = row[1] if len(row) > 1 else None
+        return not is_blank(tn) and pd.notna(pd.to_numeric(tn, errors="coerce"))
+
+    rows = []
+    blank_seen_at = None       # номер первой пустой строки в листе
+    after_blank = 0            # строки данных, найденные ПОСЛЕ пустой строки
+    for offset, row in enumerate(all_rows):
+        excel_row = offset + 3
+        tn = row[1] if len(row) > 1 else None
+        if is_blank(tn):
+            if all(is_blank(v) for v in row):
+                if blank_seen_at is None:
+                    blank_seen_at = excel_row
+                continue
+            # итоговая/служебная строка — конец данных
+            tail = sum(1 for r in all_rows[offset + 1:] if has_numeric_tn(r))
+            if tail and log:
+                log(f"ВНИМАНИЕ: {path.name}: после итоговой строки {excel_row} есть ещё {tail} строк(и) "
+                    f"с табельным номером — они НЕ прочитаны")
+            break
+        if blank_seen_at is not None:
+            after_blank += 1
+        rows.append({
+            col_name: (row[idx] if idx < len(row) else None)
+            for idx, col_name in enumerate(RSV_DATA_COLUMNS)
+        })
+
+    if after_blank and log:
+        log(f"ВНИМАНИЕ: {path.name}: пустая строка {blank_seen_at} стоит посреди данных — "
+            f"прочитаны и {after_blank} строк(и) после неё; проверьте файл")
 
     return pd.DataFrame(rows, columns=RSV_DATA_COLUMNS)
 
@@ -140,7 +172,7 @@ def build_history(out_dir: Path, log=print) -> pd.DataFrame:
     read_periods: list[tuple[int, int]] = []
     for year, month, path in files:
         try:
-            df = read_rsv_file(path)
+            df = read_rsv_file(path, log=log)
         except Exception as exc:
             log(f"ОШИБКА чтения {path}: {exc}")
             continue
@@ -158,9 +190,20 @@ def build_history(out_dir: Path, log=print) -> pd.DataFrame:
     # периоды явно, чтобы отличать «файла за месяц нет» от «файл есть, но у человека
     # в нём нет записей».
     combined.attrs["periods"] = sorted(read_periods)
-    combined["tn"] = pd.to_numeric(combined["tn"], errors="coerce")
-    for col in ("vop", "vred_dni", "otp_dni", "otp_bud_m", "po_sredn", "tar1", "kol_rd"):
-        combined[col] = pd.to_numeric(combined[col], errors="coerce")
+    # Приведение к числам с контролем: значение, которое было в файле, но не
+    # превратилось в число, раньше молча становилось NaN (для tn — строка
+    # пропадала из истории сотрудника, для остальных — день обнулялся).
+    for col in ("tn", "vop", "vred_dni", "otp_dni", "otp_bud_m", "po_sredn", "tar1", "kol_rd"):
+        raw = combined[col]
+        converted = pd.to_numeric(raw, errors="coerce")
+        lost = raw.notna() & converted.isna() & ~raw.map(lambda v: isinstance(v, str) and not v.strip())
+        if lost.any():
+            where = combined.loc[lost, ["file_year", "file_month"]].drop_duplicates()
+            periods = ", ".join(f"{int(m):02d}.{int(y)}" for y, m in zip(where["file_year"], where["file_month"]))
+            examples = [str(v) for v in raw[lost].unique()[:5]]
+            log(f"ВНИМАНИЕ: колонка «{col}»: {int(lost.sum())} значен(ий) не число "
+                f"(примеры: {examples}; месяцы: {periods}) — считаются пустыми")
+        combined[col] = converted
     return combined
 
 
