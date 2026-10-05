@@ -11,6 +11,8 @@ month_overrides.json
 crash.log
 
 # Сборка и мусор
+venv/
+.venv/
 build/
 dist/
 __pycache__/
