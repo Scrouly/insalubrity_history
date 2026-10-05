@@ -1,14 +1,14 @@
 """
 app_env.py
 ==========
-Общие для всех приложений вещи, которым НЕ нужен PyQt6:
+Общие для всех приложений вещи, которым НЕ нужен PyQt5:
 
 * чтение/запись .env (со СЛИЯНИЕМ — чужие ключи не стираются);
 * атомарная запись файлов (сначала во временный файл, потом os.replace);
 * глобальный обработчик необработанных исключений для GUI.
 
 Вынесено из insalubrity_gui.py, чтобы скрипты (тесты, отчёты) не тянули
-за собой весь PyQt6 только ради чтения настроек.
+за собой весь PyQt5 только ради чтения настроек.
 """
 
 from __future__ import annotations
@@ -152,7 +152,7 @@ def save_env_vars(config: dict[str, str]) -> None:
 
 def install_excepthook(app_title: str = "Ошибка") -> None:
     """Ставит sys.excepthook: пишет трейсбек в crash.log рядом с программой и
-    показывает диалог, вместо того чтобы PyQt6 молча закрыл окно (в сборке
+    показывает диалог, вместо того чтобы PyQt5 молча закрыл окно (в сборке
     с console=False пользователь иначе вообще не увидит причину).
 
     Вызывать ПОСЛЕ создания QApplication.
@@ -178,10 +178,10 @@ def install_excepthook(app_title: str = "Ошибка") -> None:
             return  # из фонового потока диалог показывать нельзя; ошибка внутри самого диалога — не зацикливаемся
         in_handler["busy"] = True
         try:
-            from PyQt6.QtWidgets import QMessageBox
+            from PyQt5.QtWidgets import QMessageBox
 
             box = QMessageBox()
-            box.setIcon(QMessageBox.Icon.Critical)
+            box.setIcon(QMessageBox.Critical)
             box.setWindowTitle(app_title)
             box.setText(f"Непредвиденная ошибка: {exc}")
             box.setInformativeText(f"Подробности записаны в файл:\n{CRASH_LOG_PATH}")

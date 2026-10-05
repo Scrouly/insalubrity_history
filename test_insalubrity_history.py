@@ -4,7 +4,7 @@ test_insalubrity_history.py
 Регрессионный прогон построения истории/отпуска за вредность СРАЗУ ПО ВСЕМ
 сотрудникам из lschet.dbf. Использует ровно ту же логику, что и GUI
 (history_reader.build_employee_timeline / build_work_year_blocks /
-summarize_leave_entitlement) — никакого дублирования кода, никакого PyQt6.
+summarize_leave_entitlement) — никакого дублирования кода, никакого PyQt5.
 
 Что проверяется на каждом сотруднике:
   1. build_employee_timeline(...) не падает с исключением.

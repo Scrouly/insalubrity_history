@@ -1,7 +1,7 @@
 """
 insalubrity_gui.py
 ==================
-Современный графический интерфейс на PyQt6 для расчёта доплат
+Современный графический интерфейс на PyQt5 для расчёта доплат
 за вредные условия труда и формирования ведомости RSV.
 """
 
@@ -12,9 +12,9 @@ import html
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QThread, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QFont
-from PyQt6.QtWidgets import (
+from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, Qt, QThread, QTimer, QUrl, pyqtSignal
+from PyQt5.QtGui import QDesktopServices, QFont
+from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
     QFileDialog,
@@ -557,7 +557,7 @@ class VrednMainWindow(QMainWindow):
         self.header_status = QLabel("ГОТОВ К РАБОТЕ")
         self.header_status.setObjectName("StatusPill")
         self.header_status.setProperty("mode", "success")
-        header.addWidget(self.header_status, alignment=Qt.AlignmentFlag.AlignTop)
+        header.addWidget(self.header_status, alignment=Qt.AlignTop)
 
         main.addLayout(header)
 
@@ -679,7 +679,7 @@ class VrednMainWindow(QMainWindow):
 
         self.start_btn = QPushButton("Выполнить расчёт и сформировать файлы")
         self.start_btn.setObjectName("MainActionBtn")
-        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_btn.setCursor(Qt.PointingHandCursor)
         self.start_btn.clicked.connect(self.start_calculation)
         settings.addWidget(self.start_btn)
 
@@ -713,7 +713,7 @@ class VrednMainWindow(QMainWindow):
 
         results.addLayout(metrics_grid)
 
-        results.addWidget(QLabel("Доступные файлы"), alignment=Qt.AlignmentFlag.AlignLeft)
+        results.addWidget(QLabel("Доступные файлы"), alignment=Qt.AlignLeft)
 
         self.open_rsv_btn = QPushButton("Открыть  •  RSV")
         self.open_rsv_btn.setObjectName("FileButton")
@@ -845,7 +845,7 @@ class VrednMainWindow(QMainWindow):
         self.intro_anim.setDuration(450)
         self.intro_anim.setStartValue(0.0)
         self.intro_anim.setEndValue(1.0)
-        self.intro_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.intro_anim.setEasingCurve(QEasingCurve.OutCubic)
         self.intro_anim.start()
 
     def set_status(self, text: str, mode: str = "") -> None:
@@ -944,10 +944,10 @@ class VrednMainWindow(QMainWindow):
                 f"Сейчас введено: 3.1={s1}, 3.2={s2}, 3.3={s3}.\n\n"
                 f"Строки с балльностью не удастся классифицировать и они попадут "
                 f"в «ВНИМАНИЕ» без класса 3.1/3.2/3.3. Продолжить как есть?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
             )
-            if reply != QMessageBox.StandardButton.Yes:
+            if reply != QMessageBox.Yes:
                 return
 
         self.sync_env()

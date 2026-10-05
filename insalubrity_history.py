@@ -16,9 +16,9 @@ import sys
 from pathlib import Path
 import re
 
-from PyQt6.QtCore import QDate, QEvent, QSettings, QStringListModel, Qt, QTimer
-from PyQt6.QtGui import QColor, QFont
-from PyQt6.QtWidgets import (
+from PyQt5.QtCore import QDate, QEvent, QSettings, QStringListModel, Qt, QTimer
+from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtWidgets import (
     QApplication,
     QCompleter,
     QDateEdit,
@@ -53,7 +53,7 @@ MONTHS_RU_SHORT = [
 
 # Метка «эта ячейка — часть сетки данных» (месячные строки, ИТОГО, мини-шапка года):
 # только у таких ячеек рисуются явные вертикальные линии и подсветка колонки под курсором.
-GRID_ROLE = Qt.ItemDataRole.UserRole + 1
+GRID_ROLE = Qt.UserRole + 1
 
 # Единые названия колонок: и в верхней шапке, и в мини-шапке каждого рабочего года.
 # Однострочные — двухстрочный текст не влезал в шапку и обрезался; пояснения — в тултипе.
@@ -121,7 +121,7 @@ class CompactCellDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QLineEdit(parent)
         editor.setFrame(False)
-        editor.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        editor.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         editor.setStyleSheet(
             "QLineEdit {"
             " padding: 0px 8px; min-height: 0px; margin: 0px;"
@@ -221,7 +221,7 @@ class HistoryWindow(QMainWindow):
         self.settings_btn.setStyleSheet("padding: 0; min-height: 0; font-size: 16px;")
         self.settings_btn.setToolTip("Папки с RSV и DBF")
         self.settings_btn.clicked.connect(self.toggle_paths_panel)
-        header_row.addWidget(self.settings_btn, 0, Qt.AlignmentFlag.AlignTop)
+        header_row.addWidget(self.settings_btn, 0, Qt.AlignTop)
 
         # --- Компактная строка-сводка: текущие папки + быстрое обновление ---
         summary_row = QHBoxLayout()
@@ -315,8 +315,8 @@ class HistoryWindow(QMainWindow):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Начните вводить ФИО…")
         self.completer = QCompleter([])
-        self.completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self.completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setFilterMode(Qt.MatchContains)
         self.search_input.setCompleter(self.completer)
         self.completer.activated[str].connect(self.on_employee_chosen)
         self.search_input.returnPressed.connect(self.on_search_enter)
@@ -358,7 +358,7 @@ class HistoryWindow(QMainWindow):
         # своей рамкой/паддингами, из-за чего верх занимал заметно больше
         # места, чем нужно таблице.
         divider = QFrame()
-        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFrameShape(QFrame.HLine)
         divider.setStyleSheet("background-color: #E2E8F0; max-height: 1px; border: none;")
         search_layout.addWidget(divider)
 
@@ -413,16 +413,16 @@ class HistoryWindow(QMainWindow):
         column_headers = COLUMN_TITLES
         # Числовые колонки — вправо, текстовые (период) — влево, как в спецификации.
         self.COLUMN_ALIGN = [
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignLeft | Qt.AlignVCenter,
+            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignRight | Qt.AlignVCenter,
         ]
         self.table.setHorizontalHeaderLabels(column_headers)
         for col, align in enumerate(self.COLUMN_ALIGN):
@@ -434,7 +434,7 @@ class HistoryWindow(QMainWindow):
         # смотреть на то, что Qt сам решил сжать. Ширины запоминаются между
         # запусками через QSettings (см. restore_window_state/closeEvent).
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(QHeaderView.Interactive)
         header.setMinimumSectionSize(64)
         header.setStretchLastSection(True)  # последняя колонка добирает остаток пустого места
         header.setFixedHeight(38)
@@ -444,7 +444,7 @@ class HistoryWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.setEditTriggers(
-            QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed
+            QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed
         )
         self.cell_delegate = CompactCellDelegate(self.table)
         self.table.setItemDelegate(self.cell_delegate)
@@ -453,7 +453,7 @@ class HistoryWindow(QMainWindow):
         self.table.itemChanged.connect(self.on_cell_item_changed)
         self.table.setAlternatingRowColors(False)  # чередование теперь по годам, не по строкам — см. add_month_row
         self.table.setMouseTracking(True)  # для корректного hover-подсвечивания строк
-        self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.cellClicked.connect(self.on_table_cell_clicked)
         table_layout.addWidget(self.table)
 
@@ -469,7 +469,7 @@ class HistoryWindow(QMainWindow):
         bottom_layout.addWidget(self.status_lbl)
 
         # --- Перетаскиваемая граница между верхом и таблицей ---
-        splitter = self.main_splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter = self.main_splitter = QSplitter(Qt.Vertical)
         splitter.setObjectName("MainSplitter")
         splitter.addWidget(top_container)
         splitter.addWidget(bottom_container)
@@ -850,7 +850,7 @@ class HistoryWindow(QMainWindow):
         if self._suppress_item_changed:
             return  # программное построение таблицы — не правка кадровика
 
-        payload = item.data(Qt.ItemDataRole.UserRole)
+        payload = item.data(Qt.UserRole)
         if not payload:
             return  # не редактируемая ячейка (или что-то не проставило метку)
         year, month, field, had_data = payload
@@ -914,7 +914,7 @@ class HistoryWindow(QMainWindow):
         self._set_hover_col(column)
 
     def eventFilter(self, obj, event):
-        if obj is self.table.viewport() and event.type() == QEvent.Type.Leave:
+        if obj is self.table.viewport() and event.type() == QEvent.Leave:
             self._set_hover_col(-1)
         return super().eventFilter(obj, event)
 
@@ -959,7 +959,7 @@ class HistoryWindow(QMainWindow):
             item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
             item.setToolTip(COLUMN_TIPS[col])
             item.setData(GRID_ROLE, True)
-            item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # не редактируется и не выделяется
+            item.setFlags(Qt.ItemIsEnabled)  # не редактируется и не выделяется
             self.table.setItem(row_idx, col, item)
         return row_idx
 
@@ -971,7 +971,7 @@ class HistoryWindow(QMainWindow):
         self.table.setRowHeight(row_idx, 6)
         item = QTableWidgetItem("")
         item.setBackground(QColor("#E2E8F0"))
-        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(row_idx, 0, item)
         self.table.setSpan(row_idx, 0, 1, self.table.columnCount())
 
@@ -1209,10 +1209,10 @@ class HistoryWindow(QMainWindow):
             item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
 
             if field is not None:
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-                item.setData(Qt.ItemDataRole.UserRole, (year, month, field, has_data))
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
+                item.setData(Qt.UserRole, (year, month, field, has_data))
             else:
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
             self.table.setItem(row_idx, col, item)
         return row_idx
@@ -1233,7 +1233,7 @@ class HistoryWindow(QMainWindow):
             item.setForeground(QColor("#2C5282"))
             item.setBackground(QColor("#EBF8FF"))
             item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row_idx, col, item)
 
     def add_leave_class_row(
@@ -1268,10 +1268,10 @@ class HistoryWindow(QMainWindow):
         item0.setForeground(fg_color)
         if bg_color is not None:
             item0.setBackground(bg_color)
-        item0.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        item0.setTextAlignment(Qt.AlignCenter)
         if tooltip:
             item0.setToolTip(tooltip)
-        item0.setFlags(item0.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        item0.setFlags(item0.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(row_idx, 0, item0)
 
         span_item = QTableWidgetItem(span_text)
@@ -1279,10 +1279,10 @@ class HistoryWindow(QMainWindow):
         span_item.setForeground(fg_color)
         if bg_color is not None:
             span_item.setBackground(bg_color)
-        span_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        span_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         if tooltip:
             span_item.setToolTip(tooltip)
-        span_item.setFlags(span_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        span_item.setFlags(span_item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(row_idx, 1, span_item)
         self.table.setSpan(row_idx, 1, 1, self.table.columnCount() - 1)
         return row_idx

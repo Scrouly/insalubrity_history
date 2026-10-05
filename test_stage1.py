@@ -105,15 +105,15 @@ def test_get_hire_date_contract_unchanged():
     assert hr.get_hire_date(1, emp, {"1": "1800-01-01"}) == (date(2015, 3, 2), "dnepr")
 
 
-# 1.2 запятая в классе + 1.9 поле даты (нужен PyQt6, offscreen) -----------------
+# 1.2 запятая в классе + 1.9 поле даты (нужен PyQt5, offscreen) -----------------
 _QAPP = None  # держим ссылку: иначе QApplication уничтожается сборщиком мусора
 
 
 def _qt():
     global _QAPP
-    pytest.importorskip("PyQt6.QtWidgets")
+    pytest.importorskip("PyQt5.QtWidgets")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PyQt5.QtWidgets import QApplication
     if _QAPP is None:
         _QAPP = QApplication.instance() or QApplication([])
     return _QAPP
@@ -152,7 +152,7 @@ def test_gui_refuses_close_while_worker_running(tmp_path, monkeypatch):
     _qt()
     monkeypatch.setattr(app_env, "ENV_FILE_PATH", tmp_path / ".env")
     import insalubrity_gui as g
-    from PyQt6.QtWidgets import QMessageBox
+    from PyQt5.QtWidgets import QMessageBox
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     w = g.VrednMainWindow()
 
@@ -160,7 +160,7 @@ def test_gui_refuses_close_while_worker_running(tmp_path, monkeypatch):
         def isRunning(self):
             return True
     w.worker = Busy()
-    from PyQt6.QtGui import QCloseEvent
+    from PyQt5.QtGui import QCloseEvent
     ev = QCloseEvent()
     w.closeEvent(ev)
     assert not ev.isAccepted()
