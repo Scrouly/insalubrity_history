@@ -12,6 +12,7 @@ insalubrity_gui.py — папки не нужно указывать повто�
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -42,7 +43,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from app_env import EnvFileError, install_excepthook, load_env_vars, migrate_legacy_data, save_env_vars
+from app_env import EnvFileError, data_dir, install_excepthook, load_env_vars, migrate_legacy_data, save_env_vars
 from version import __version__
 from insalubrity_gui import STYLESHEET
 
@@ -138,6 +139,44 @@ class CompactCellDelegate(QStyledItemDelegate):
         editor.setGeometry(option.rect)
 
 
+UI_SETTINGS_FILE = "ui_settings.ini"
+_REGISTRY_ORG, _REGISTRY_APP = "Dolomit", "InsalubrityHistory"
+
+
+def ui_settings() -> QSettings:
+    """Настройки интерфейса (размер/положение окна, ширины колонок, свёрнутая панель).
+
+    Лежат ФАЙЛОМ в папке данных пользователя (рядом с .env и правками), а не в реестре:
+    они не зависят от обновления программы, их видно и можно скопировать/восстановить,
+    а тесты (у которых своя временная папка данных) больше не перезаписывают настройки
+    разработчика — раньше при каждом прогоне тестов (в том числе в build.bat) реальные
+    настройки окна затирались настройками тестового окна."""
+    folder = data_dir()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return QSettings(str(folder / UI_SETTINGS_FILE), QSettings.IniFormat)
+
+
+def migrate_ui_settings_from_registry() -> bool:
+    """Один раз переносит прежние настройки интерфейса из реестра в файл.
+    Ничего не делает, если файл уже есть, в реестре пусто или идут тесты."""
+    if os.environ.get("INSALUBRITY_TESTING"):
+        return False
+    if (data_dir() / UI_SETTINGS_FILE).exists():
+        return False
+    old = QSettings(_REGISTRY_ORG, _REGISTRY_APP)
+    keys = old.allKeys()
+    if not keys:
+        return False
+    new = ui_settings()
+    for key in keys:
+        new.setValue(key, old.value(key))
+    new.sync()
+    return True
+
+
 class DataLoadWorker(QThread):
     """Читает все RSV-файлы и список сотрудников в фоне, чтобы окно не «зависало»
     на время чтения (раньше это делалось в главном потоке)."""
@@ -189,13 +228,21 @@ class HistoryWindow(QMainWindow):
 
         self._loader: DataLoadWorker | None = None
         self._reload_pending = False
+        self._ui_ready = False
+        self._ui_save_timer = QTimer(self)
+        self._ui_save_timer.setSingleShot(True)
+        self._ui_save_timer.setInterval(1000)
+        self._ui_save_timer.timeout.connect(self.save_ui_state)
 
         self.build_ui()
         self.restore_window_state()
+        self.table.horizontalHeader().sectionResized.connect(self.schedule_ui_save)
+        self.main_splitter.splitterMoved.connect(self.schedule_ui_save)
+        self._ui_ready = True      # до этого момента изменения размеров — это сборка окна, не выбор пользователя
         self.reload_data()
 
     def restore_window_state(self) -> None:
-        settings = QSettings("Dolomit", "InsalubrityHistory")
+        settings = ui_settings()
         geometry = settings.value("window/geometry")
         if geometry is not None:
             self.restoreGeometry(geometry)
@@ -225,11 +272,30 @@ class HistoryWindow(QMainWindow):
         self._reload_pending = False
         if self._loader is not None and self._loader.isRunning():
             self._loader.wait(30000)
-        settings = QSettings("Dolomit", "InsalubrityHistory")
+        self._ui_save_timer.stop()
+        self.save_ui_state()
+        super().closeEvent(event)
+
+    def save_ui_state(self) -> None:
+        settings = ui_settings()
         settings.setValue("window/geometry", self.saveGeometry())
         settings.setValue("window/state", self.saveState())
         settings.setValue("table/header_state_v2", self.table.horizontalHeader().saveState())
-        super().closeEvent(event)
+        settings.sync()
+
+    def schedule_ui_save(self, *_args) -> None:
+        """Сохраняем вид через секунду после последнего изменения, а не только при закрытии:
+        если окно закрыли аварийно/убили процесс, размеры и колонки не пропадут."""
+        if getattr(self, "_ui_ready", False):
+            self._ui_save_timer.start()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.schedule_ui_save()
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        self.schedule_ui_save()
 
     # ------------------------------------------------------------------
     # UI
@@ -530,7 +596,9 @@ class HistoryWindow(QMainWindow):
         self.top_body.setVisible(not collapsed)
         self.top_toggle_btn.setText("▸" if collapsed else "▾")
         self.refresh_top_title()
-        QSettings("Dolomit", "InsalubrityHistory").setValue("ui/top_collapsed", collapsed)
+        settings = ui_settings()
+        settings.setValue("ui/top_collapsed", collapsed)
+        settings.sync()
         # Верхняя панель ужалась — отдаём освободившееся место таблице.
         QTimer.singleShot(0, lambda: self.main_splitter.setSizes([1, 5000]))
 
@@ -1395,6 +1463,7 @@ def pd_isna(value) -> bool:
 
 def main() -> None:
     migrate_legacy_data()  # старые настройки/правки рядом с программой -> папка данных (до чтения .env)
+    migrate_ui_settings_from_registry()  # прежний вид окна из реестра -> файл в папке данных
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))

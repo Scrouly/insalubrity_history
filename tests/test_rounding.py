@@ -11,7 +11,8 @@ import pytest
 
 import history_reader as hr
 import insalubrity as ins
-from test_stage3 import leave_of, make_history, vr, year_rows
+from helpers import leave_of
+from test_class_split import vr
 
 
 @pytest.mark.parametrize("value, expected", [

@@ -15,7 +15,7 @@ import pytest
 
 import app_env
 import history_reader as hr
-from test_stage6 import rec, write_rsv
+from test_data_quality import write_rsv, rec
 
 
 # --- резервные копии правок -----------------------------------------------------

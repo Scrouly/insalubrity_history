@@ -1,6 +1,6 @@
 """
-test_stage8.py — раздача на компьютеры кадровиков: данные отдельно от программы.
-Запуск: pytest test_stage8.py -v
+test_deployment.py — раздача на компьютеры кадровиков: данные отдельно от программы.
+Запуск: pytest test_deployment.py -v
 """
 from __future__ import annotations
 
@@ -12,14 +12,22 @@ import pytest
 
 import app_env
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]      # корень проекта
 
 
 # --- где лежат данные ----------------------------------------------------------------
-def test_dev_run_keeps_data_next_to_code(monkeypatch):
+def test_dev_run_keeps_data_in_project_root(monkeypatch):
     monkeypatch.delenv(app_env.DATA_DIR_ENV_VAR, raising=False)
     monkeypatch.delattr(sys, "frozen", raising=False)
-    assert app_env.data_dir() == app_env.app_dir()
+    assert app_env.app_dir().name == "src"
+    assert app_env.data_dir() == ROOT                      # .env и правки — в корне, не в src/
+
+
+def test_dev_run_without_src_folder_keeps_data_next_to_code(monkeypatch, tmp_path):
+    monkeypatch.delenv(app_env.DATA_DIR_ENV_VAR, raising=False)
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(app_env, "app_dir", lambda: tmp_path / "flat")
+    assert app_env.data_dir() == tmp_path / "flat"
 
 
 def test_frozen_app_keeps_data_in_appdata_not_in_program_folder(monkeypatch, tmp_path):
@@ -109,12 +117,12 @@ def test_version_is_semver_like():
 
 
 def test_spec_has_upx_disabled_for_win7():
-    spec = (ROOT / "InsalubrityHistory.spec").read_text(encoding="utf-8")
+    spec = (ROOT / "packaging" / "InsalubrityHistory.spec").read_text(encoding="utf-8")
     assert "upx=True" not in spec and spec.count("upx=False") == 2
 
 
 # --- гигиена скриптов (запустить их на Linux нельзя, но типичные поломки ловим) ----------
-SCRIPTS = ["build.bat", "publish.bat", "deploy/InsalubrityHistory.cmd", "deploy/install.bat"]
+SCRIPTS = ["scripts/build.bat", "scripts/publish.bat", "deploy/install.bat"]
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -127,38 +135,63 @@ def test_batch_files_are_ascii_crlf_and_balanced(name):
     assert "\t" not in text
 
 
-def test_launcher_never_touches_user_data():
-    lines = (ROOT / "deploy/InsalubrityHistory.cmd").read_text(encoding="ascii").splitlines()
-    code = [l for l in lines if not l.strip().lower().startswith("rem ")]
-    assert not any("APPDATA" in l.upper() for l in code)        # папку данных launcher не знает вообще
-    mirrors = [l for l in code if "robocopy" in l.lower()]
-    assert mirrors and all("/MIR" in l and "app.new" in l for l in mirrors)   # зеркалит только во временную папку
-
-
-def test_launcher_updates_via_staging_and_skips_when_running():
-    text = (ROOT / "deploy/InsalubrityHistory.cmd").read_text(encoding="ascii")
-    assert "tasklist" in text and "InsalubrityHistory.exe" in text         # не обновляем запущенную программу
-    assert "fc /b" in text                                                  # сравнение версий
-    assert "if errorlevel 8 goto run" in text                               # сбой копирования -> работаем со старой
+def test_launcher_code_never_touches_user_data():
+    text = (ROOT / "launcher" / "updater.py").read_text(encoding="utf-8")
+    # папку данных пользователя запускатель не знает: переменные окружения не читает вообще
+    assert "os.environ" not in text and "getenv" not in text and "expandvars" not in text
+    assert '"app.new"' in text and '"app.old"' in text                       # обновление через временную папку
 
 
 def test_installer_uses_per_user_folder_and_server_txt():
     text = (ROOT / "deploy/install.bat").read_text(encoding="ascii")
     assert "%LOCALAPPDATA%" in text and "server.txt" in text and "ProgramFiles" not in text   # права админа не нужны
+    assert "InsalubrityHistoryLauncher.exe" in text and ".cmd" not in text
 
 
 def test_publish_uses_staging_and_refuses_same_version():
-    text = (ROOT / "publish.bat").read_text(encoding="ascii")
+    text = (ROOT / "scripts" / "publish.bat").read_text(encoding="ascii")
     assert "current.new" in text and "current.old" in text
     assert 'if "%NEWVER%"=="%OLDVER%"' in text
+    assert "InsalubrityHistoryLauncher.exe" in text                          # запускатель уходит на сервер вместе с установщиком
 
 
 def test_build_runs_tests_before_pyinstaller_and_writes_version():
-    text = (ROOT / "build.bat").read_text(encoding="ascii")
+    text = (ROOT / "scripts" / "build.bat").read_text(encoding="ascii")
     assert text.index("pytest") < text.index("pyinstaller")
     assert "version.txt" in text
+    assert "Launcher.spec" in text                                           # собирается и запускатель
 
 
 def test_spec_excludes_pkg_resources_to_avoid_startup_crash():
-    spec = (ROOT / "InsalubrityHistory.spec").read_text(encoding="utf-8")
+    spec = (ROOT / "packaging" / "InsalubrityHistory.spec").read_text(encoding="utf-8")
     assert "excludes=['pkg_resources']" in spec
+
+
+# --- структура проекта ----------------------------------------------------------------------
+def test_project_layout_is_consistent():
+    for rel in ("src/app_env.py", "src/history_reader.py", "src/insalubrity.py", "src/insalubrity_history.py",
+                "src/version.py", "packaging/InsalubrityHistory.spec", "packaging/logo.ico",
+                "scripts/build.bat", "scripts/publish.bat", "deploy/install.bat",
+                "packaging/Launcher.spec", "launcher/launcher.py", "launcher/updater.py",
+                "requirements-win7.txt", "pytest.ini"):
+        assert (ROOT / rel).exists(), rel
+
+
+def test_scripts_point_to_existing_paths():
+    build = (ROOT / "scripts" / "build.bat").read_text(encoding="ascii")
+    publish = (ROOT / "scripts" / "publish.bat").read_text(encoding="ascii")
+    assert "packaging\\InsalubrityHistory.spec" in build
+    assert 'robocopy "deploy"' in publish and (ROOT / "deploy").is_dir()
+    assert 'cd /d "%~dp0.."' in build and 'cd /d "%~dp0.."' in publish        # работают из корня проекта
+    assert "venv\\Scripts\\python.exe" in build                               # и venv, и .venv
+
+
+def test_spec_builds_from_src_and_uses_packaged_icon():
+    spec = (ROOT / "packaging" / "InsalubrityHistory.spec").read_text(encoding="utf-8")
+    assert "SPECPATH" in spec and "'src'" in spec and "logo.ico" in spec
+
+
+def test_launcher_spec_is_small_windowed_onefile():
+    spec = (ROOT / "packaging" / "Launcher.spec").read_text(encoding="utf-8")
+    assert "console=False" in spec and "upx=False" in spec
+    assert "InsalubrityHistoryLauncher" in spec and "'PyQt5'" in spec         # Qt в запускатель не тянем

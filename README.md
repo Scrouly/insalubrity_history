@@ -15,9 +15,10 @@ src/          код программы (запуск: python src/insalubrity_hi
   find_zero_kol_rd_months.py  отчёт по сбойным месяцам (kol_rd=0)
   version.py                номер версии (менять перед выпуском)
 tests/        тесты:  python -m pytest
-packaging/    InsalubrityHistory.spec (PyInstaller) и иконка
-scripts/      build.bat (тесты + сборка), publish.bat (выпуск на сервер)
-deploy/       install.bat и запускатель для компьютеров кадровиков
+packaging/    InsalubrityHistory.spec, Launcher.spec (PyInstaller) и иконка
+scripts/      build.bat (тесты + сборка программы и запускателя), publish.bat (выпуск на сервер)
+launcher/     запускатель для ПК кадровиков (окно обновления + запуск программы)
+deploy/       install.bat — установка запускателя на ПК кадровика
 docs/         DEPLOY.md — как раздавать и обновлять
 requirements-win7.txt
 ```

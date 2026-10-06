@@ -18,6 +18,10 @@ if not exist "dist\InsalubrityHistory\version.txt" (
   echo [ERROR] Nothing to publish - run build.bat first.
   exit /b 1
 )
+if not exist "dist\InsalubrityHistoryLauncher.exe" (
+  echo [ERROR] Launcher not built - run build.bat first.
+  exit /b 1
+)
 set /p NEWVER=<"dist\InsalubrityHistory\version.txt"
 
 set "OLDVER="
@@ -56,6 +60,8 @@ if not exist "%TARGET%\current\version.txt" (
 
 rem 3. Installer + launcher for new PCs.
 robocopy "deploy" "%TARGET%\install" /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS /NP >nul
+copy /Y "dist\InsalubrityHistoryLauncher.exe" "%TARGET%\install\InsalubrityHistoryLauncher.exe" >nul
+if errorlevel 1 echo [WARNING] Could not copy the launcher to %TARGET%\install
 
 echo.
 echo Done. Server has version %NEWVER%.

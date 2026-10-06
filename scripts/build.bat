@@ -14,6 +14,13 @@ if not defined VENV (
 )
 call "%VENV%\Scripts\activate.bat"
 
+python -c "import tkinter" >nul 2>&1
+if errorlevel 1 (
+  echo [ERROR] tkinter is missing in this Python - the launcher needs it.
+  echo Reinstall Python 3.8 and keep the option "tcl/tk and IDLE" enabled.
+  exit /b 1
+)
+
 echo === Running tests ===
 python -m pytest -q
 if errorlevel 1 (
@@ -30,7 +37,16 @@ if errorlevel 1 (
 )
 
 >"dist\InsalubrityHistory\version.txt" echo %VER%
+
+echo === Building launcher ===
+pyinstaller --noconfirm --clean --distpath dist --workpath build packaging\Launcher.spec
+if errorlevel 1 (
+  echo [ERROR] Launcher build failed.
+  exit /b 1
+)
+
 echo.
 echo Build ready: dist\InsalubrityHistory  (version %VER%)
+echo Launcher:    dist\InsalubrityHistoryLauncher.exe
 echo Next: publish.bat
 exit /b 0

@@ -12,5 +12,6 @@ import tempfile
 
 _SESSION_DATA_DIR = tempfile.mkdtemp(prefix="insalubrity_tests_")
 os.environ["INSALUBRITY_DATA_DIR"] = _SESSION_DATA_DIR
+os.environ["INSALUBRITY_TESTING"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 atexit.register(shutil.rmtree, _SESSION_DATA_DIR, True)
