@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 from openpyxl import load_workbook
 
-from app_env import app_dir, atomic_write_text
+from app_env import atomic_write_text, data_dir
 from insalubrity import VOP_VREDNOST, find_table, fox_round, load_dbf
 
 # Порядок колонок данных в RSV должен совпадать с data_cols в save_rsv_excel()
@@ -36,11 +36,11 @@ RSV_DATA_COLUMNS = [
 # без подчёркивания — так называются файлы, перенесённые из старых расчётов).
 RSV_FILENAME_RE = re.compile(r"^rsv_?(\d{2})\.xlsx$", re.IGNORECASE)
 
-# От папки программы (см. app_env.app_dir), а не от текущей рабочей директории —
+# От папки программы (см. app_env.data_dir), а не от текущей рабочей директории —
 # иначе запуск ярлыком из другого места "терял" прежние правки (создавал новые
 # пустые файлы рядом с той папкой, откуда его запустили).
-DEFAULT_OVERRIDE_FILE = app_dir() / "hire_dates_override.json"
-DEFAULT_MONTH_OVERRIDE_FILE = app_dir() / "month_overrides.json"
+DEFAULT_OVERRIDE_FILE = data_dir() / "hire_dates_override.json"
+DEFAULT_MONTH_OVERRIDE_FILE = data_dir() / "month_overrides.json"
 
 # Столбцы, которые кадровик может править вручную — только "входные" данные,
 # "Итого" (monthly_total) и "Тариф" (tar1) всегда остаются расчётными.

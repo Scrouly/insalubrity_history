@@ -38,6 +38,7 @@ from app_env import (
     install_excepthook,
     load_env_vars,
     save_env_vars,
+    migrate_legacy_data,
 )
 from insalubrity import run as run_calc
 
@@ -1048,6 +1049,7 @@ class VrednMainWindow(QMainWindow):
 
 
 def main() -> None:
+    migrate_legacy_data()  # старые настройки рядом с программой -> папка данных (до чтения .env)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))

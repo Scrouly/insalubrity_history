@@ -14,6 +14,7 @@ app_env.py
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -34,8 +35,64 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
-ENV_FILE_PATH = app_dir() / ".env"
-CRASH_LOG_PATH = app_dir() / "crash.log"
+APP_DATA_FOLDER = "InsalubrityHistory"
+DATA_DIR_ENV_VAR = "INSALUBRITY_DATA_DIR"
+
+
+def data_dir() -> Path:
+    """Папка ДАННЫХ пользователя: .env, файлы ручных правок, резервные копии, crash.log.
+
+    Отдельно от папки программы, чтобы обновление программы (замена файлов сборки)
+    никогда не трогало настройки и правки конкретного пользователя:
+
+    * собранное приложение: %APPDATA%\\InsalubrityHistory (у каждого пользователя
+      Windows своя);
+    * запуск из исходников (разработка, тесты): корень проекта (если код лежит в
+      папке src/, то её родитель), чтобы .env и файлы правок остались на прежнем месте;
+    * переменная окружения INSALUBRITY_DATA_DIR переопределяет и то и другое.
+    """
+    override = os.environ.get(DATA_DIR_ENV_VAR)
+    if override:
+        return Path(override)
+    if getattr(sys, "frozen", False):
+        base = os.environ.get("APPDATA") or str(Path.home())
+        return Path(base) / APP_DATA_FOLDER
+    code_dir = app_dir()
+    return code_dir.parent if code_dir.name == "src" else code_dir
+
+
+ENV_FILE_PATH = data_dir() / ".env"
+CRASH_LOG_PATH = data_dir() / "crash.log"
+
+# Файлы, которые раньше лежали рядом с программой (до переезда в папку данных).
+LEGACY_DATA_FILES = (".env", "hire_dates_override.json", "month_overrides.json")
+
+
+def migrate_legacy_data() -> list[str]:
+    """Один раз копирует старые настройки и правки из папки программы в папку данных.
+
+    Копирует, а не переносит (старые файлы остаются как есть), и никогда не
+    перезаписывает то, что уже есть в папке данных. Вызывать ДО load_env_vars():
+    иначе первый запуск создаст пустой .env и перенос будет пропущен.
+    Возвращает список скопированных имён."""
+    src, dst = app_dir(), data_dir()
+    if src == dst:
+        return []
+    copied: list[str] = []
+    try:
+        for name in LEGACY_DATA_FILES:
+            source, target = src / name, dst / name
+            if source.is_file() and not target.exists():
+                dst.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+                copied.append(name)
+        source_backups, target_backups = src / "backups", dst / "backups"
+        if source_backups.is_dir() and not target_backups.exists():
+            shutil.copytree(source_backups, target_backups)
+            copied.append("backups/")
+    except OSError as exc:
+        print(f"Не удалось перенести прежние настройки из {src}: {exc}")
+    return copied
 
 DEFAULT_ENV_CONFIG = {
     "DBF_DATA_DIR": "./dbf",
@@ -165,6 +222,7 @@ def install_excepthook(app_title: str = "Ошибка") -> None:
             return
         text = "".join(traceback.format_exception(exc_type, exc, tb))
         try:
+            Path(CRASH_LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
             with open(CRASH_LOG_PATH, "a", encoding="utf-8") as f:
                 f.write(f"\n=== {datetime.now():%Y-%m-%d %H:%M:%S} ===\n{text}")
         except Exception:

@@ -42,7 +42,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from app_env import EnvFileError, install_excepthook, load_env_vars, save_env_vars
+from app_env import EnvFileError, install_excepthook, load_env_vars, migrate_legacy_data, save_env_vars
+from version import __version__
 from insalubrity_gui import STYLESHEET
 
 import history_reader as hr
@@ -168,7 +169,7 @@ class DataLoadWorker(QThread):
 class HistoryWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Расчёт отпуска за вредность")
+        self.setWindowTitle(f"Расчёт отпуска за вредность — v{__version__}")
         self.setStyleSheet(STYLESHEET)
 
         self.env_data = load_env_vars()
@@ -1393,6 +1394,7 @@ def pd_isna(value) -> bool:
 
 
 def main() -> None:
+    migrate_legacy_data()  # старые настройки/правки рядом с программой -> папка данных (до чтения .env)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))

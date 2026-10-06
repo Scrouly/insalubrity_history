@@ -315,9 +315,9 @@ def test_save_override_stores_marker_and_clear_removes_entry():
 # пути .env / JSON-правок — относительно папки программы, а не cwd
 # ---------------------------------------------------------------------------
 def test_paths_are_relative_to_app_dir_not_cwd():
-    assert app_env.ENV_FILE_PATH.parent == app_env.app_dir()
-    assert hr.DEFAULT_OVERRIDE_FILE.parent == app_env.app_dir()
-    assert hr.DEFAULT_MONTH_OVERRIDE_FILE.parent == app_env.app_dir()
+    assert app_env.ENV_FILE_PATH.parent == app_env.data_dir()
+    assert hr.DEFAULT_OVERRIDE_FILE.parent == app_env.data_dir()
+    assert hr.DEFAULT_MONTH_OVERRIDE_FILE.parent == app_env.data_dir()
     for p in (app_env.ENV_FILE_PATH, hr.DEFAULT_OVERRIDE_FILE, hr.DEFAULT_MONTH_OVERRIDE_FILE):
         assert p.is_absolute(), f"{p} должен быть абсолютным, а не завязанным на текущую папку"
 

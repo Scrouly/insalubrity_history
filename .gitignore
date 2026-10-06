@@ -3,20 +3,22 @@
 _env
 dbf/
 rsv/
-backups/
 *.dbf
 *.DBF
 hire_dates_override.json
 month_overrides.json
 *.bak
+backups/
 crash.log
+publish_target.txt
 
 # Сборка и мусор
-venv/
-.venv/
 build/
 dist/
+venv/
+.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+.idea/
 *.rar
