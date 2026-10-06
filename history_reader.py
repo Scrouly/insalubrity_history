@@ -154,6 +154,37 @@ def read_rsv_file(path: Path, log=None) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=RSV_DATA_COLUMNS)
 
 
+# Кэш прочитанных RSV-файлов: «Обновить данные» перечитывает только те файлы,
+# которые изменились (по времени изменения и размеру). Вместе с файлом хранятся
+# его предупреждения, чтобы при повторном показе из кэша они не пропадали.
+_RSV_CACHE: dict[str, tuple[tuple[int, int], pd.DataFrame, list[str]]] = {}
+
+
+def clear_rsv_cache() -> None:
+    _RSV_CACHE.clear()
+
+
+def _read_rsv_cached(path: Path, log) -> pd.DataFrame:
+    key = str(Path(path).resolve())
+    stat = Path(path).stat()
+    signature = (stat.st_mtime_ns, stat.st_size)
+    hit = _RSV_CACHE.get(key)
+    if hit is not None and hit[0] == signature:
+        for message in hit[2]:
+            log(message)
+        return hit[1].copy()
+    messages: list[str] = []
+    df = read_rsv_file(path, log=messages.append)
+    for message in messages:
+        log(message)
+    _RSV_CACHE[key] = (signature, df, messages)
+    return df.copy()
+
+
+def empty_history() -> pd.DataFrame:
+    return pd.DataFrame(columns=RSV_DATA_COLUMNS + ["file_year", "file_month"])
+
+
 def build_history(out_dir: Path, log=print) -> pd.DataFrame:
     """Собирает единый DataFrame по всем найденным rsv-файлам.
 
@@ -172,7 +203,7 @@ def build_history(out_dir: Path, log=print) -> pd.DataFrame:
     read_periods: list[tuple[int, int]] = []
     for year, month, path in files:
         try:
-            df = read_rsv_file(path, log=log)
+            df = _read_rsv_cached(path, log)
         except Exception as exc:
             log(f"ОШИБКА чтения {path}: {exc}")
             continue
@@ -320,14 +351,41 @@ def _load_json_dict(path: Path) -> dict:
     return data
 
 
+BACKUP_KEEP_DAYS = 30
+
+
+def _backup_before_save(path: Path) -> None:
+    """Резервные копии файла правок перед перезаписью:
+
+    * <файл>.bak — состояние до ПОСЛЕДНЕГО сохранения (одна копия, перезаписывается;
+      после двух неудачных сохранений подряд хорошая версия в ней уже теряется);
+    * backups/<имя>_ГГГГММДД.json — снимок состояния до ПЕРВОГО сохранения за день,
+      хранится BACKUP_KEEP_DAYS последних дней, чтобы можно было откатиться на
+      вчерашнюю/позавчерашнюю версию.
+    Любая ошибка бэкапа не должна блокировать само сохранение правки."""
+    if not path.exists():
+        return
+    try:
+        shutil.copy2(path, path.with_name(path.name + ".bak"))
+    except OSError:
+        pass
+    try:
+        backup_dir = path.parent / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        snapshot = backup_dir / f"{path.stem}_{date.today():%Y%m%d}{path.suffix}"
+        if not snapshot.exists():
+            shutil.copy2(path, snapshot)
+        snapshots = sorted(backup_dir.glob(f"{path.stem}_????????{path.suffix}"))
+        for old in snapshots[:-BACKUP_KEEP_DAYS]:
+            old.unlink()
+    except OSError:
+        pass
+
+
 def _save_json_dict(path: Path, data: dict) -> None:
-    """Атомарная запись + одна резервная копия предыдущей версии (.bak)."""
+    """Атомарная запись; перед ней — резервные копии (см. _backup_before_save)."""
     path = Path(path)
-    if path.exists():
-        try:
-            shutil.copy2(path, path.with_name(path.name + ".bak"))
-        except OSError:
-            pass  # отсутствие бэкапа не должно блокировать сохранение
+    _backup_before_save(path)
     atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=2))
 
 

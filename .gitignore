@@ -3,6 +3,7 @@
 _env
 dbf/
 rsv/
+backups/
 *.dbf
 *.DBF
 hire_dates_override.json

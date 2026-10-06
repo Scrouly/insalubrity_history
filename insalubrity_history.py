@@ -13,10 +13,11 @@ insalubrity_gui.py — папки не нужно указывать повто�
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 import re
 
-from PyQt5.QtCore import QDate, QEvent, QSettings, QStringListModel, Qt, QTimer
+from PyQt5.QtCore import QCoreApplication, QDate, QEvent, QSettings, QStringListModel, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QApplication,
@@ -136,6 +137,34 @@ class CompactCellDelegate(QStyledItemDelegate):
         editor.setGeometry(option.rect)
 
 
+class DataLoadWorker(QThread):
+    """Читает все RSV-файлы и список сотрудников в фоне, чтобы окно не «зависало»
+    на время чтения (раньше это делалось в главном потоке)."""
+
+    # history, employees (или None), список сообщений, текст ошибки чтения lschet ("" — нет)
+    loaded = pyqtSignal(object, object, object, str)
+
+    def __init__(self, out_dir: Path, data_dir: Path, parent=None) -> None:
+        super().__init__(parent)
+        self.out_dir = out_dir
+        self.data_dir = data_dir
+
+    def run(self) -> None:
+        messages: list[str] = []
+        try:
+            history = hr.build_history(self.out_dir, log=messages.append)
+        except Exception as exc:  # не даём упасть потоку: показываем как ошибку чтения
+            history = hr.empty_history()
+            messages.append(f"ОШИБКА чтения папки RSV {self.out_dir}: {exc}")
+        employees = None
+        error = ""
+        try:
+            employees = hr.get_lschet_employees(self.data_dir)
+        except Exception as exc:
+            error = str(exc)
+        self.loaded.emit(history, employees, messages, error)
+
+
 class HistoryWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -156,6 +185,9 @@ class HistoryWindow(QMainWindow):
         self.current_termination_date = None
         self.current_termination_source = None
         self.header_row_to_block: dict[int, dict] = {}
+
+        self._loader: DataLoadWorker | None = None
+        self._reload_pending = False
 
         self.build_ui()
         self.restore_window_state()
@@ -187,6 +219,11 @@ class HistoryWindow(QMainWindow):
             self.table.horizontalHeader().restoreState(header_state)
 
     def closeEvent(self, event) -> None:
+        # Закрыть окно, пока поток чтения работает, значит уничтожить работающий QThread
+        # (аварийное завершение). Ждём его окончания.
+        self._reload_pending = False
+        if self._loader is not None and self._loader.isRunning():
+            self._loader.wait(30000)
         settings = QSettings("Dolomit", "InsalubrityHistory")
         settings.setValue("window/geometry", self.saveGeometry())
         settings.setValue("window/state", self.saveState())
@@ -601,24 +638,61 @@ class HistoryWindow(QMainWindow):
             self.reload_data()
 
     def reload_data(self) -> None:
+        """Запускает чтение данных в фоне. Повторный вызов во время чтения не
+        запускает второй поток: загрузка перезапустится с актуальными путями, как
+        только закончится текущая."""
         self.sync_env_paths()
         self.update_paths_summary()
+        if self._loader is not None:
+            self._reload_pending = True
+            return
+
         out_dir = Path(self.out_dir_input.text().strip())
         data_dir = Path(self.data_dir_input.text().strip())
 
-        messages: list[str] = []
-        self.history = hr.build_history(out_dir, log=messages.append)
+        self.search_input.setEnabled(False)
+        self.status_lbl.setText("Загрузка данных…")
+        self.status_lbl.setToolTip("")
 
-        try:
-            self.employees = hr.get_lschet_employees(data_dir)
-        except Exception as exc:
+        self._loader = DataLoadWorker(out_dir, data_dir, self)
+        self._loader.loaded.connect(self._on_data_loaded)
+        self._loader.finished.connect(self._on_loader_finished)
+        self._loader.start()
+
+    def wait_for_load(self, timeout_ms: int = 30000) -> bool:
+        """Блокирующее ожидание конца загрузки (для тестов и скриптов)."""
+        started = time.monotonic()
+        while self._loader is not None:
+            if (time.monotonic() - started) * 1000 > timeout_ms:
+                return False
+            QThread.msleep(10)
+            QCoreApplication.processEvents()
+        return True
+
+    def _on_loader_finished(self) -> None:
+        loader, self._loader = self._loader, None
+        if loader is not None:
+            loader.deleteLater()
+        if self._reload_pending:
+            self._reload_pending = False
+            self.reload_data()
+
+    def _on_data_loaded(self, history, employees, messages, lschet_error) -> None:
+        if self._reload_pending:
+            return  # пути поменялись за время чтения — эти данные уже не актуальны
+        self.search_input.setEnabled(True)
+        self.history = history
+        messages = list(messages)
+
+        if lschet_error:
             self.employees = None
             QMessageBox.critical(
                 self, "Ошибка чтения lschet.dbf",
-                f"Не удалось прочитать список сотрудников:\n\n{exc}",
+                f"Не удалось прочитать список сотрудников:\n\n{lschet_error}",
             )
             self.status_lbl.setText("Ошибка чтения lschet.dbf — список сотрудников недоступен")
             return
+        self.employees = employees
 
         self.display_to_tn.clear()
         display_names = []
