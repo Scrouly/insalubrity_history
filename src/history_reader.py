@@ -1051,6 +1051,7 @@ def summarize_leave_entitlement(
         work_year_key, work_year_label, kol_rd_total,
         classes: [{"klass": 3.1, "days": ..., "norm": ..., "vyshlo": ...}, ...],
         unclassified_days, mixed_class_months [(год, месяц, {класс: дни вредности})],
+        mixed_month_leave_class {(год, месяц): класс, куда ушли отпуск и прочие выплаты},
         polozheno_total, vyshlo_total (дробное), vyshlo_total_rounded (итог, целое)
     """
     if norm_days is None:
@@ -1084,6 +1085,7 @@ def summarize_leave_entitlement(
         class_totals: dict[float, float] = {}
         unclassified_days = 0.0
         mixed_months = []
+        mixed_leave_class: dict[tuple[int, int], float] = {}
         year_vred = work_year_vred_by_class(group)
         for _, month_row in group.iterrows():
             for c, d in month_class_days(month_row, year_vred).items():
@@ -1093,7 +1095,9 @@ def summarize_leave_entitlement(
                     class_totals[c] = class_totals.get(c, 0.0) + d
             split = month_class_split(month_row)
             if split:
-                mixed_months.append((int(month_row["year"]), int(month_row["month"]), dict(split)))
+                ym = (int(month_row["year"]), int(month_row["month"]))
+                mixed_months.append((ym[0], ym[1], dict(split)))
+                mixed_leave_class[ym] = _dominant_year_class(split, year_vred)
         class_totals = dict(sorted(class_totals.items()))
 
         classes_breakdown = []
@@ -1127,6 +1131,9 @@ def summarize_leave_entitlement(
             "classes": classes_breakdown,
             "unclassified_days": unclassified_days,
             "mixed_class_months": mixed_months,
+            # {(год, месяц): класс, в который отнесены отпуск/о-б-м/по среднему
+            # месяца со сменой класса} — преобладающий за рабочий год.
+            "mixed_month_leave_class": mixed_leave_class,
             "days_exceed_norm": days_exceed_norm,
             "total_days": total_days,
             "polozheno_total": polozheno_total,

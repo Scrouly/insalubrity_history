@@ -970,8 +970,11 @@ class HistoryWindow(QMainWindow):
                 # Кладём в month_rows, чтобы она сворачивалась вместе с месяцами.
                 qt_block["month_rows"].append(self.add_column_header_row())
 
+                leave_classes = (block["leave"] or {}).get("mixed_month_leave_class", {})
                 for r in block["month_rows"]:
-                    qt_block["month_rows"].append(self.add_month_row(r, tint=tint))
+                    qt_block["month_rows"].append(
+                        self.add_month_row(r, tint=tint, leave_classes=leave_classes)
+                    )
 
                 self.finish_work_year_block(block)
 
@@ -1169,11 +1172,14 @@ class HistoryWindow(QMainWindow):
 
         for y_m, m_m, split in leave_entry.get("mixed_class_months", []):
             parts = ", ".join(f"{c:.1f} — {d:.0f} дн." for c, d in sorted(split.items()))
-            usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
+            usual = leave_entry.get("mixed_month_leave_class", {}).get((y_m, m_m))
+            if usual is None:
+                usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
             self.add_span_row(
                 "",
                 f"Смена класса в {m_m:02d}.{y_m}: дни вредности {parts} Отпуск и «по среднему» "
-                f"этого месяца отнесены к классу {usual:.1f}.",
+                f"этого месяца отнесены к классу {usual:.1f} — он преобладает за рабочий год "
+                f"по сумме дней вредности.",
                 QColor("#553C9A"),
                 QColor("#FAF5FF"),
             )
@@ -1228,7 +1234,7 @@ class HistoryWindow(QMainWindow):
         source = "в RSV было" if has_data else "было (авто)"
         return f"{label}: {source} {was} → вручную изменено на {now}"
 
-    def add_month_row(self, r, tint: QColor | None = None) -> int:
+    def add_month_row(self, r, tint: QColor | None = None, leave_classes: dict | None = None) -> int:
         row_idx = self.table.rowCount()
         self.table.insertRow(row_idx)
 
@@ -1365,10 +1371,13 @@ class HistoryWindow(QMainWindow):
                 split = hr.month_class_split(r)
                 if split:
                     parts = "; ".join(f"{c:.1f} — {d:.0f} дн." for c, d in sorted(split.items()))
-                    usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
+                    usual = (leave_classes or {}).get((int(year), int(month)))
+                    if usual is None:
+                        usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
                     item.setToolTip(
                         f"Смена класса в этом месяце: {parts} В ячейке показан класс с большим числом "
-                        f"дней вредности; отпуск и «по среднему» месяца относятся к нему ({usual:.1f})."
+                        f"дней вредности за месяц; отпуск и «по среднему» месяца относятся к классу "
+                        f"{usual:.1f} — он преобладает за рабочий год по сумме дней вредности."
                     )
 
             item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
