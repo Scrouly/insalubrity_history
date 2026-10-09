@@ -647,15 +647,59 @@ def month_class_split(row) -> dict[float, float]:
     return {}
 
 
-def month_class_days(row) -> dict:
+def _vred_class_days(row) -> dict:
+    """{класс: дни вредности} месяца (класс None — не определён). В месяце со сменой
+    класса дни делятся так, как пришли из RSV (при ручной правке числа дней —
+    пропорционально), иначе целиком идут в класс месяца (bal_vredn_effective)."""
+    if _nz(row.get("monthly_total")) <= 0:
+        return {}
+    vred = max(_nz(row.get("vred_dni")), 0)
+    if vred <= 0:
+        return {}
+    out: dict = {}
+    split = month_class_split(row)
+    if split:
+        s = sum(split.values())
+        for c, d in split.items():
+            k = round(float(c), 1)
+            out[k] = out.get(k, 0.0) + vred * d / s
+        return out
+    eff = pd.to_numeric(row.get("bal_vredn_effective"), errors="coerce")
+    out[None if pd.isna(eff) else round(float(eff), 1)] = vred
+    return out
+
+
+def work_year_vred_by_class(group: pd.DataFrame) -> dict[float, float]:
+    """{класс: сумма дней вредности за рабочий год} — по месяцам группы таймлайна."""
+    totals: dict[float, float] = {}
+    for _, row in group.iterrows():
+        for c, d in _vred_class_days(row).items():
+            if c is not None:
+                totals[c] = totals.get(c, 0.0) + d
+    return totals
+
+
+def _dominant_year_class(split: dict, year_vred: dict) -> float:
+    """Из классов месяца со сменой класса выбирает тот, у которого больше всего дней
+    вредности за рабочий год; при равенстве — старший класс."""
+    return max(
+        (round(float(c), 1) for c in split),
+        key=lambda c: (round(year_vred.get(c, 0.0), 6), c),
+    )
+
+
+def month_class_days(row, year_vred: dict | None = None) -> dict:
     """Раскладывает дни месяца по классам: {класс: дни}; ключ None — класс не определён.
 
     * Дни ВРЕДНОСТИ — по своим классам: в месяце со сменой класса они делятся так,
       как пришли из RSV (при ручной правке числа дней — пропорционально).
     * Отпуск, о/б/м и «по среднему» НЕ делятся: целиком идут в обычный класс
-      сотрудника — класс месяца (bal_vredn_effective: в месяце со сменой класса это
-      класс с большим числом дней вредности, а если строки вредности в месяце нет —
-      последний известный, перенесённый вперёд).
+      сотрудника. В месяце БЕЗ смены класса это класс месяца (bal_vredn_effective;
+      если строки вредности в месяце нет — последний известный, перенесённый вперёд).
+      В месяце СО сменой класса, если передан year_vred (дни вредности по классам за
+      рабочий год, см. work_year_vred_by_class), — тот из классов месяца, который
+      за рабочий год встречается чаще всего по сумме дней вредности (при равенстве —
+      старший). Без year_vred — класс месяца с большим числом дней вредности.
 
     Дни остаются дробными — округление только в итоговом результате."""
     total = _nz(row.get("monthly_total"))
@@ -666,6 +710,9 @@ def month_class_days(row) -> dict:
 
     eff = pd.to_numeric(row.get("bal_vredn_effective"), errors="coerce")
     usual = None if pd.isna(eff) else round(float(eff), 1)
+    split = month_class_split(row)
+    if split and year_vred:
+        usual = _dominant_year_class(split, year_vred)
 
     out: dict = {}
 
@@ -673,13 +720,9 @@ def month_class_days(row) -> dict:
         if d:
             out[c] = out.get(c, 0.0) + d
 
-    split = month_class_split(row)
-    if split and vred > 0:
-        s = sum(split.values())
-        for c, d in split.items():
-            add(round(float(c), 1), vred * d / s)
-    else:
-        add(usual, vred)
+    if vred > 0:
+        for c, d in _vred_class_days(row).items():
+            add(c, d)
     add(usual, other)
     return out
 
@@ -1034,13 +1077,16 @@ def summarize_leave_entitlement(
 
         # Дни месяца раскладываются по классам через month_class_days: дни вредности —
         # по своим классам, отпуск/о-б-м/по среднему — целиком в обычный класс
-        # сотрудника (класс месяца). Ключи округлены до 1 знака (без сюрпризов с
+        # сотрудника: в месяце без смены класса — класс месяца, в месяце со сменой
+        # класса — класс, преобладающий за рабочий год по сумме дней вредности
+        # (year_vred). Ключи округлены до 1 знака (без сюрпризов с
         # плавающей точкой), None — класс ещё не определён.
         class_totals: dict[float, float] = {}
         unclassified_days = 0.0
         mixed_months = []
+        year_vred = work_year_vred_by_class(group)
         for _, month_row in group.iterrows():
-            for c, d in month_class_days(month_row).items():
+            for c, d in month_class_days(month_row, year_vred).items():
                 if c is None:
                     unclassified_days += d
                 else:
@@ -1095,7 +1141,7 @@ def summarize_leave_entitlement(
 
 def project_current_work_year(timeline: pd.DataFrame, termination_date=None) -> pd.DataFrame:
     """Достраивает ТЕКУЩИЙ (последний) рабочий год до полных 12 месяцев
-    прогнозными значениями kol_rd/vred_dni там, где реальных RSV-данных ещё
+    прогнозными значениями kol_rd (и vred_dni = kol_rd) там, где реальных RSV-данных ещё
     нет — иначе расчёт отпуска занижает годовой итог только из-за того, что
     год ещё не закончился (RSV обычно отстаёт от календаря на 1-2 месяца).
 
@@ -1104,6 +1150,9 @@ def project_current_work_year(timeline: pd.DataFrame, termination_date=None) -> 
     вперёд. build_employee_timeline уже не строит исходные строки позже
     этой даты, так что без этой проверки достройка сама подставила бы
     туда прогнозные месяцы задним числом.
+
+    Норма рабочих дней (kol_rd) прогнозного месяца — среднее по пулу месяцев,
+    а дни вредности (vred_dni) в нём РАВНЫ этой норме (не среднему vred_dni).
 
     Источник прогноза (берётся первый непустой вариант):
       1. Предыдущий рабочий год (блок прямо перед текущим) — среднее по его
@@ -1190,8 +1239,13 @@ def project_current_work_year(timeline: pd.DataFrame, termination_date=None) -> 
     if pool.empty:
         return result  # не из чего строить прогноз
 
+    source_note += "; дни вредности приняты равными норме рабочих дней"
+
     avg_kol_rd = fox_round(float(pool["kol_rd"].mean()))
-    avg_vred_dni = fox_round(float(pool["vred_dni"].mean()))
+    # Дни вредности в достроенных месяцах принимаются равными норме рабочих дней
+    # (kol_rd), а не средним по прошлым месяцам: сотрудник «доработает» год во
+    # вредных условиях полностью.
+    projected_vred_dni = avg_kol_rd
 
     known_rows = result.loc[result["bal_vredn_effective"].notna()]
     if not known_rows.empty:
@@ -1214,13 +1268,13 @@ def project_current_work_year(timeline: pd.DataFrame, termination_date=None) -> 
         {
             "year": y, "month": m,
             "kol_rd": avg_kol_rd,
-            "vred_dni": avg_vred_dni,
+            "vred_dni": projected_vred_dni,
             "bal_vredn": None,
             "otp_dni": 0, "otp_bud_m": 0, "po_sredn": 0, "tar1": None,
             "has_data": False,
             "work_year_key": last_key,
             "work_year_label": label,
-            "monthly_total": avg_vred_dni,
+            "monthly_total": projected_vred_dni,
             "bal_vredn_effective": projected_class,
             # Спрогнозированный месяц по определению не подтверждён RSV, так
             # что класс здесь ВСЕГДА перенесённый (если вообще есть откуда
