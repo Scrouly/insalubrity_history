@@ -41,6 +41,7 @@ from app_env import (
     migrate_legacy_data,
 )
 from insalubrity import run as run_calc
+from ui_tokens import apply_tokens
 
 
 MONTH_NAMES = [
@@ -58,14 +59,14 @@ MONTH_NAMES = [
     "12 — Декабрь",
 ]
 
-STYLESHEET = """
+_QSS_TEMPLATE = """
 * {
     font-family: "Segoe UI", "Arial", sans-serif;
 }
 
 QMainWindow, QWidget#Root {
-    background: #F5F6F8;
-    color: #1A202C;
+    background: @APP_BG@;
+    color: @TEXT@;
 }
 
 QFrame#TopBar {
@@ -73,74 +74,75 @@ QFrame#TopBar {
 }
 
 QLabel#AppTitle {
-    color: #1A202C;
+    color: @TEXT@;
     font-size: 25px;
     font-weight: 700;
 }
 
 QLabel#AppSubtitle {
-    color: #718096;
+    color: @TEXT_MUTED@;
     font-size: 14px;
 }
 
 QLabel#SectionTitle {
-    color: #1A202C;
+    color: @TEXT@;
     font-size: 16px;
     font-weight: 700;
 }
 
 QLabel#SectionHint {
-    color: #4A5568;
+    color: @TEXT_SECONDARY@;
     font-size: 13px;
 }
 
 QFrame#Card {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
+    background: @WHITE@;
+    border: 1px solid @GRAY_200@;
     border-radius: 10px;
 }
 
 QFrame#MiniCard {
-    background: #F7FAFC;
-    border: 1px solid #E2E8F0;
+    background: @GRAY_50@;
+    border: 1px solid @GRAY_200@;
     border-radius: 8px;
 }
 
 QLabel#FieldLabel {
-    color: #4A5568;
+    color: @TEXT_SECONDARY@;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.4px;
 }
 
 QLabel#FieldCaption {
-    color: #718096;
+    color: @TEXT_MUTED@;
     font-size: 12px;
 }
 
 QLineEdit, QComboBox, QSpinBox, QDateEdit {
-    background: #FFFFFF;
-    color: #1A202C;
-    border: 1px solid #CBD5E0;
+    background: @WHITE@;
+    color: @TEXT@;
+    border: 1px solid @BORDER_FIELD@;
     border-radius: 8px;
     padding: 8px 12px;
     min-height: 20px;
-    selection-background-color: #3182CE;
-    selection-color: #ffffff;
+    selection-background-color: @PRIMARY@;
+    selection-color: @WHITE@;
 }
 
 QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QDateEdit:hover {
-    border-color: #A0AEC0;
+    border-color: @BORDER_FIELD_HOVER@;
 }
 
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDateEdit:focus {
-    border: 1px solid #3182CE;
+    border: 2px solid @FOCUS@;
+    padding: 7px 11px;
 }
 
 QLineEdit:disabled, QSpinBox:disabled, QDateEdit:disabled {
-    background: #F7FAFC;
-    color: #A0AEC0;
-    border-color: #E2E8F0;
+    background: @GRAY_50@;
+    color: @GRAY_400@;
+    border-color: @GRAY_200@;
 }
 
 QSpinBox::up-button, QSpinBox::down-button {
@@ -155,11 +157,11 @@ QComboBox::drop-down {
 }
 
 QComboBox QAbstractItemView, QListView {
-    background: #FFFFFF;
-    color: #1A202C;
-    border: 1px solid #E2E8F0;
-    selection-background-color: #3182CE;
-    selection-color: white;
+    background: @WHITE@;
+    color: @TEXT@;
+    border: 1px solid @GRAY_200@;
+    selection-background-color: @PRIMARY@;
+    selection-color: @WHITE@;
     padding: 4px;
     outline: none;
 }
@@ -173,23 +175,23 @@ QPushButton {
 }
 
 QPushButton#BrowseButton, QPushButton#UtilityButton {
-    background: #F7FAFC;
-    color: #2D3748;
-    border: 1px solid #E2E8F0;
+    background: @GRAY_50@;
+    color: @GRAY_700@;
+    border: 1px solid @GRAY_200@;
 }
 
 QPushButton#BrowseButton:hover, QPushButton#UtilityButton:hover {
-    background: #EDF2F7;
-    border-color: #CBD5E0;
+    background: @GRAY_100@;
+    border-color: @GRAY_300@;
 }
 
 QPushButton#BrowseButton:pressed, QPushButton#UtilityButton:pressed {
-    background: #E2E8F0;
+    background: @GRAY_200@;
 }
 
 QPushButton#MainActionBtn {
-    background: #3182CE;
-    color: white;
+    background: @PRIMARY@;
+    color: @WHITE@;
     border: none;
     min-height: 48px;
     font-size: 14px;
@@ -197,40 +199,40 @@ QPushButton#MainActionBtn {
 }
 
 QPushButton#MainActionBtn:hover {
-    background: #2B6CB0;
+    background: @PRIMARY_HOVER@;
 }
 
 QPushButton#MainActionBtn:pressed {
-    background: #2C5282;
+    background: @PRIMARY_PRESSED@;
 }
 
 QPushButton#MainActionBtn:disabled {
-    background: #E2E8F0;
-    color: #A0AEC0;
+    background: @GRAY_200@;
+    color: @GRAY_400@;
 }
 
 QPushButton#FileButton {
-    background: #FFFFFF;
-    color: #2D3748;
-    border: 1px solid #E2E8F0;
+    background: @WHITE@;
+    color: @GRAY_700@;
+    border: 1px solid @GRAY_200@;
     min-height: 36px;
 }
 
 QPushButton#FileButton:hover {
-    background: #F7FAFC;
-    border-color: #CBD5E0;
+    background: @GRAY_50@;
+    border-color: @GRAY_300@;
 }
 
 QPushButton#FileButton:disabled {
-    color: #A0AEC0;
-    background: #F7FAFC;
-    border-color: #E2E8F0;
+    color: @GRAY_400@;
+    background: @GRAY_50@;
+    border-color: @GRAY_200@;
 }
 
 QLabel#StatusPill {
-    background: #EDF2F7;
-    color: #718096;
-    border: 1px solid #E2E8F0;
+    background: @PILL_IDLE_BG@;
+    color: @PILL_IDLE_FG@;
+    border: 1px solid @PILL_IDLE_BORDER@;
     border-radius: 11px;
     padding: 6px 10px;
     font-size: 12px;
@@ -238,42 +240,42 @@ QLabel#StatusPill {
 }
 
 QLabel#StatusPill[mode="success"] {
-    color: #276749;
-    border-color: #9AE6B4;
-    background: #F0FFF4;
+    color: @PILL_SUCCESS_FG@;
+    border-color: @PILL_SUCCESS_BORDER@;
+    background: @PILL_SUCCESS_BG@;
 }
 
 QLabel#StatusPill[mode="working"] {
-    color: #2C5282;
-    border-color: #90CDF4;
-    background: #EBF8FF;
+    color: @PILL_WORKING_FG@;
+    border-color: @PILL_WORKING_BORDER@;
+    background: @PILL_WORKING_BG@;
 }
 
 QLabel#StatusPill[mode="error"] {
-    color: #C53030;
-    border-color: #FEB2B2;
-    background: #FFF5F5;
+    color: @PILL_ERROR_FG@;
+    border-color: @PILL_ERROR_BORDER@;
+    background: @PILL_ERROR_BG@;
 }
 
 QLabel#MetricValue {
-    color: #1A202C;
+    color: @TEXT@;
     font-size: 23px;
     font-weight: 700;
 }
 
 QLabel#MetricTitle {
-    color: #718096;
+    color: @TEXT_MUTED@;
     font-size: 12px;
     font-weight: 700;
 }
 
 QLabel#MetricNote {
-    color: #A0AEC0;
+    color: @TEXT_FAINT@;
     font-size: 11px;
 }
 
 QProgressBar {
-    background: #E2E8F0;
+    background: @GRAY_200@;
     border: none;
     border-radius: 4px;
     min-height: 7px;
@@ -281,14 +283,14 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background: #3182CE;
+    background: @PRIMARY@;
     border-radius: 4px;
 }
 
 QTextEdit#LogArea {
-    background: #FFFFFF;
-    color: #2D3748;
-    border: 1px solid #E2E8F0;
+    background: @WHITE@;
+    color: @GRAY_700@;
+    border: 1px solid @GRAY_200@;
     border-radius: 10px;
     padding: 10px;
     font-family: "Cascadia Mono", "Consolas", monospace;
@@ -302,13 +304,13 @@ QScrollBar:vertical {
 }
 
 QScrollBar::handle:vertical {
-    background: #CBD5E0;
+    background: @BORDER_FIELD@;
     border-radius: 5px;
     min-height: 30px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background: #A0AEC0;
+    background: @GRAY_500@;
 }
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
@@ -316,21 +318,21 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 }
 
 QMessageBox {
-    background: #FFFFFF;
-    color: #1A202C;
-    border: 1px solid #E2E8F0;
+    background: @WHITE@;
+    color: @TEXT@;
+    border: 1px solid @GRAY_200@;
 }
 
 QMessageBox QLabel {
     background: transparent;
-    color: #1A202C;
+    color: @TEXT@;
     font-size: 13px;
 }
 
 QMessageBox QPushButton {
-    background: #F7FAFC;
-    color: #1A202C;
-    border: 1px solid #CBD5E0;
+    background: @GRAY_50@;
+    color: @TEXT@;
+    border: 1px solid @GRAY_300@;
     border-radius: 8px;
     min-width: 88px;
     min-height: 34px;
@@ -340,30 +342,30 @@ QMessageBox QPushButton {
 }
 
 QMessageBox QPushButton:hover {
-    background: #EDF2F7;
-    border-color: #A0AEC0;
+    background: @GRAY_100@;
+    border-color: @GRAY_400@;
 }
 
 QMessageBox QPushButton:pressed {
-    background: #E2E8F0;
+    background: @GRAY_200@;
 }
 
 QMessageBox QPushButton:default {
-    background: #3182CE;
-    color: #ffffff;
-    border-color: #3182CE;
+    background: @PRIMARY@;
+    color: @WHITE@;
+    border-color: @PRIMARY@;
 }
 
 QMessageBox QPushButton:default:hover {
-    background: #2B6CB0;
-    border-color: #2B6CB0;
+    background: @PRIMARY_HOVER@;
+    border-color: @PRIMARY_HOVER@;
 }
 
 QTableWidget {
-    background: #FFFFFF;
-    color: #1A202C;
-    gridline-color: #E2E8F0;
-    border: 1px solid #E2E8F0;
+    background: @WHITE@;
+    color: @TEXT@;
+    gridline-color: @GRAY_200@;
+    border: 1px solid @GRAY_200@;
     border-radius: 10px;
     outline: none;
     font-size: 13px;
@@ -374,42 +376,119 @@ QTableWidget::item {
 }
 
 QTableWidget::item:selected {
-    background: #BEE3F8;
-    color: #1A202C;
+    background: @SELECTION@;
+    color: @TEXT@;
 }
 
 QTableWidget::item:hover {
-    background: #F7FAFC;
+    background: @GRAY_50@;
 }
 
 QHeaderView::section {
-    background: #F7FAFC;
-    color: #4A5568;
+    background: @GRAY_50@;
+    color: @TEXT_SECONDARY@;
     padding: 9px 8px;
     border: none;
-    border-bottom: 1px solid #E2E8F0;
-    border-right: 1px solid #EDF2F7;
+    border-bottom: 1px solid @GRAY_200@;
+    border-right: 1px solid @GRAY_100@;
     font-weight: 700;
     font-size: 12px;
 }
 
 QTableCornerButton::section {
-    background: #F7FAFC;
+    background: @GRAY_50@;
     border: none;
 }
 
 QSplitter::handle {
-    background: #E2E8F0;
+    background: @GRAY_200@;
 }
 
 QSplitter::handle:hover {
-    background: #A0AEC0;
+    background: @GRAY_400@;
 }
 
 QSplitter::handle:vertical {
     height: 6px;
 }
+
+/* --- Фокус с клавиатуры: видимая рамка у кнопок (WCAG 2.4.7) --- */
+QPushButton:focus,
+QPushButton#UtilityButton:focus,
+QPushButton#BrowseButton:focus,
+QPushButton#FileButton:focus {
+    border: 2px solid @FOCUS@;
+    padding: 0 12px;
+}
+
+QPushButton#MainActionBtn:focus {
+    border: 2px solid @PRIMARY_PRESSED@;
+    padding: 0 12px;
+}
+
+/* Квадратные кнопки с символом (⚙ ✕ ▾ ▸) — раньше стиль дублировался в коде */
+QPushButton#IconButton {
+    background: @GRAY_50@;
+    color: @GRAY_700@;
+    border: 1px solid @GRAY_200@;
+    padding: 0;
+    min-height: 0;
+    font-size: 16px;
+}
+
+QPushButton#IconButton:hover {
+    background: @GRAY_100@;
+    border-color: @GRAY_300@;
+}
+
+QPushButton#IconButton:pressed {
+    background: @GRAY_200@;
+}
+
+QPushButton#IconButton:focus {
+    border: 2px solid @FOCUS@;
+    padding: 0;
+}
+
+QLabel#AppTitleCompact {
+    color: @TEXT@;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+/* Плашка важных предупреждений над таблицей истории */
+QLabel#Banner {
+    background: @BANNER_BG@;
+    color: @BANNER_FG@;
+    border: 1px solid @BANNER_BORDER@;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+QLabel#LegendText {
+    color: @TEXT_MUTED@;
+    font-size: 12px;
+}
+
+QLabel#SearchHint {
+    color: @TEXT_MUTED@;
+    font-size: 12px;
+}
+
+QLabel#SearchHint[mode="error"] {
+    color: @PILL_ERROR_FG@;
+    font-weight: 600;
+}
+
+QLabel#EmptyState {
+    color: @TEXT_MUTED@;
+    font-size: 14px;
+    padding: 28px 12px;
+}
 """
+
+STYLESHEET = apply_tokens(_QSS_TEMPLATE)
 
 
 class VrednWorker(QThread):

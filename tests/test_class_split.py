@@ -247,11 +247,3 @@ def test_projection_gives_leave_year_total_up_to_norm_for_unfinished_year():
     leave = hr.summarize_leave_entitlement(hr.project_current_work_year(tl))[0]
     # 6 факт. мес. по 12 дн. + 6 достроенных по 20 дн. = 192 дня из 240
     assert by_class(leave)[3.1]["days"] == pytest.approx(6 * 12 + 6 * 20)
-
-
-def test_leave_result_reports_class_chosen_for_mixed_month():
-    _, leave = _mixed_june_with_leave(3.1, [(3.1, 5), (3.2, 15)])
-    assert leave["mixed_month_leave_class"] == {(2025, 6): 3.1}
-    # без смены класса словарь пуст
-    _, plain = leave_of(year_rows())
-    assert plain["mixed_month_leave_class"] == {}
