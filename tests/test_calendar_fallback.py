@@ -1,6 +1,6 @@
 """
-test_stage2.py — достройка календаря (kol_rd=0 больше не теряет дни вредности).
-Запуск: pytest test_stage2.py -v
+test_calendar_fallback.py — достройка календаря (kol_rd=0 больше не теряет дни вредности).
+Запуск: pytest test_calendar_fallback.py -v
 """
 from __future__ import annotations
 

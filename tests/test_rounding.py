@@ -1,6 +1,6 @@
 """
-test_stage5.py — округление: расчёт дробный, итог округляется к ближайшему целому.
-Запуск: pytest test_stage5.py -v
+test_rounding.py — округление: расчёт дробный, итог округляется к ближайшему целому.
+Запуск: pytest test_rounding.py -v
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 import history_reader as hr
 import insalubrity as ins
 from helpers import leave_of
-from test_class_split import vr
+from helpers import vr
 
 
 @pytest.mark.parametrize("value, expected", [

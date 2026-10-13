@@ -70,7 +70,7 @@ BADGE_COLOR_ROLE = Qt.UserRole + 3
 
 # Единые названия колонок: и в верхней шапке, и в мини-шапке каждого рабочего года.
 # Однострочные — двухстрочный текст не влезал в шапку и обрезался; пояснения — в тултипе.
-COLUMN_TITLES = ["Год", "Месяц", "Раб. дни", "Вредн.", "Отпуск", "О/б/м", "По средн.", "Итого", "Класс", "Тариф"]
+COLUMN_TITLES = ["Год", "Месяц", "Раб. дни", "Вредность", "Отпуск", "О/б/м", "По среднему", "Итого", "Класс", "Тариф"]
 COLUMN_TIPS = [
     "Год", "Месяц",
     "Рабочие дни по графику (норма месяца)",
@@ -89,17 +89,22 @@ for _col in (2, 3, 4, 5, 6, 8):
 
 SOURCE_LABELS = {
     "override": "указана кадровиком вручную",
-    "dnepr": "из карточки сотрудника (DNEPR)",
-    "dnepr_invalid": "в карточке (DNEPR) неправдоподобная дата — проигнорирована, укажите вручную",
+    "dnepr": "из карточки сотрудника",
+    "dnepr_invalid": "в карточке неправдоподобная дата приёма — проигнорирована, укажите вручную",
     None: "не указана — таймлайн начат с первого найденного расчёта",
 }
 
 TERMINATION_SOURCE_LABELS = {
-    "data_uvl": "по карточке сотрудника (DATA_UVL)",
-    "data_uvl_invalid": "в карточке (DATA_UVL) неправдоподобная дата — проигнорирована",
+    "data_uvl": "по карточке сотрудника",
+    "data_uvl_invalid": "в карточке неправдоподобная дата увольнения — проигнорирована",
     "data_uvl_before_hire": "в карточке есть более ранняя дата увольнения — проигнорирована (похоже на переприём)",
     None: None,
 }
+
+
+def fmt_num(value: float, digits: int = 2) -> str:
+    """Число для показа: десятичная ЗАПЯТАЯ, как принято в русской документации."""
+    return f"{value:.{digits}f}".replace(".", ",")
 
 
 def format_fio(fio: str) -> str:
@@ -421,10 +426,6 @@ class HistoryWindow(QMainWindow):
         browse_data_btn.setAccessibleName("Выбрать папку с DBF")
         browse_data_btn.clicked.connect(self.browse_data_dir)
 
-        refresh_btn = QPushButton("Обновить данные")
-        refresh_btn.setObjectName("UtilityButton")
-        refresh_btn.clicked.connect(self.reload_data)
-
         paths_layout.addWidget(paths_label)
         paths_layout.addWidget(self.out_dir_input, 2)
         paths_layout.addWidget(browse_out_btn)
@@ -433,7 +434,6 @@ class HistoryWindow(QMainWindow):
         paths_layout.addWidget(self.data_dir_input, 2)
         paths_layout.addWidget(browse_data_btn)
         paths_layout.addStretch()
-        paths_layout.addWidget(refresh_btn)
         paths_outer.addLayout(paths_layout)
 
         norms_layout = QHBoxLayout()
@@ -531,7 +531,7 @@ class HistoryWindow(QMainWindow):
         self.hire_source_lbl.setWordWrap(True)
         info_row.addWidget(self.hire_source_lbl, 1)
 
-        hire_label = QLabel("Дата устройства:")
+        hire_label = QLabel("Дата приёма на работу:")
         hire_label.setObjectName("FieldLabel")
         info_row.addWidget(hire_label)
 
@@ -545,13 +545,13 @@ class HistoryWindow(QMainWindow):
         self.hire_date_edit.setSpecialValueText("не указана")
         self.hire_date_edit.setDate(self.hire_date_edit.minimumDate())
         self.hire_date_edit.setEnabled(False)
-        self.hire_date_edit.setAccessibleName("Дата устройства")
+        self.hire_date_edit.setAccessibleName("Дата приёма на работу")
         hire_label.setBuddy(self.hire_date_edit)
         info_row.addWidget(self.hire_date_edit)
 
         self.save_hire_btn = QPushButton("Сохранить дату")
         self.save_hire_btn.setObjectName("UtilityButton")
-        self.save_hire_btn.setToolTip("Записать дату устройства как ручную правку для этого сотрудника")
+        self.save_hire_btn.setToolTip("Записать дату приёма на работу как ручную правку для этого сотрудника")
         self.save_hire_btn.setEnabled(False)
         self.save_hire_btn.clicked.connect(self.save_hire_date)
         info_row.addWidget(self.save_hire_btn)
@@ -567,9 +567,26 @@ class HistoryWindow(QMainWindow):
         table_layout.setContentsMargins(16, 12, 16, 14)
         table_layout.setSpacing(8)
 
+        table_title_row = QHBoxLayout()
+        table_title_row.setSpacing(6)
         table_title = QLabel("Помесячная и годовая статистика")
         table_title.setObjectName("SectionTitle")
-        table_layout.addWidget(table_title)
+        table_title_row.addWidget(table_title)
+        table_title_row.addStretch(1)
+        link_qss = (
+            f"QPushButton {{ background: transparent; color: {ui.PRIMARY}; border: none;"
+            f" text-decoration: underline; padding: 2px 6px; min-height: 24px; font-size: 13px; }}"
+            f"QPushButton:hover {{ color: {ui.PRIMARY_HOVER}; }}"
+            f"QPushButton:focus {{ border: 2px solid {ui.FOCUS}; border-radius: 4px; }}"
+        )
+        self.collapse_all_btn = QPushButton("Свернуть все годы")
+        self.expand_all_btn = QPushButton("Развернуть все годы")
+        for btn, collapse in ((self.collapse_all_btn, True), (self.expand_all_btn, False)):
+            btn.setStyleSheet(link_qss)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, c=collapse: self.toggle_all_blocks(c))
+            table_title_row.addWidget(btn)
+        table_layout.addLayout(table_title_row)
 
         # Легенда: что значат заливки и буквы-метки в ячейках + как править.
         self.legend_lbl = QLabel(self._legend_html())
@@ -606,7 +623,7 @@ class HistoryWindow(QMainWindow):
             Qt.AlignRight | Qt.AlignVCenter,
             Qt.AlignRight | Qt.AlignVCenter,
             Qt.AlignRight | Qt.AlignVCenter,
-            Qt.AlignRight | Qt.AlignVCenter,
+            Qt.AlignLeft | Qt.AlignVCenter,     # «Тариф» — последняя (растянутая) колонка: влево, ближе к «Классу»
         ]
         self.table.setHorizontalHeaderLabels(column_headers)
         for col, align in enumerate(self.COLUMN_ALIGN):
@@ -623,7 +640,7 @@ class HistoryWindow(QMainWindow):
         header.setStretchLastSection(True)  # последняя колонка добирает остаток пустого места
         header.setFixedHeight(38)
         header.sectionResized.connect(lambda *_a: self._fit_wrapped_rows())
-        default_widths = [70, 110, 100, 90, 90, 80, 90, 90, 70, 90]
+        default_widths = [70, 110, 100, 100, 90, 80, 110, 90, 70, 90]
         for col, w in enumerate(default_widths):
             self.table.setColumnWidth(col, w)
         self.table.verticalHeader().setVisible(False)
@@ -678,6 +695,17 @@ class HistoryWindow(QMainWindow):
         # Горячие клавиши: Ctrl+F — к поиску, F5 — обновить данные.
         QShortcut(QKeySequence(QKeySequence.Find), self, activated=self.focus_search)
         QShortcut(QKeySequence("F5"), self, activated=self.reload_data)
+
+        # Явный порядок Tab: настройки → сотрудник → таблица → предупреждения.
+        tab_chain = [
+            self.settings_btn, quick_refresh_btn,
+            self.out_dir_input, browse_out_btn, self.data_dir_input, browse_data_btn,
+            *self.norm_spinboxes.values(), save_norms_btn,
+            self.top_toggle_btn, self.search_input, self.hire_date_edit, self.save_hire_btn,
+            self.collapse_all_btn, self.expand_all_btn, self.table, self.warnings_btn,
+        ]
+        for first, second in zip(tab_chain, tab_chain[1:]):
+            QWidget.setTabOrder(first, second)
 
         self.update_paths_summary()
         self._set_table_empty(self.EMPTY_HINT)
@@ -743,7 +771,7 @@ class HistoryWindow(QMainWindow):
             fio = format_fio(row.iloc[0]["fio"]) if not row.empty else "?"
             hd = self.current_hire_date
             hire_txt = f"{hd.day:02d}.{hd.month:02d}.{hd.year}" if hd is not None else "не указана"
-            title = f"{fio}  ·  таб. № {self.current_tn}  ·  дата устройства: {hire_txt}"
+            title = f"{fio}  ·  таб. № {self.current_tn}  ·  дата приёма: {hire_txt}"
             td = self.current_termination_date
             if td is not None:
                 title += f"  ·  уволен: {td.day:02d}.{td.month:02d}.{td.year}"
@@ -1106,12 +1134,12 @@ class HistoryWindow(QMainWindow):
         self.refresh_top_title()
 
         early_months = hr.find_data_before_hire(tn, self.history, hire_date)
-        hire_label = f"Таб. № {tn}   •   дата устройства: {SOURCE_LABELS.get(source, source)}"
+        hire_label = f"Таб. № {tn}   •   дата приёма: {SOURCE_LABELS.get(source, source)}"
         early_warning = ""
         if early_months:
             first, last = early_months[0], early_months[-1]
             early_warning = (
-                f"⚠ Есть RSV-данные РАНЬШЕ даты устройства: {len(early_months)} мес. "
+                f"⚠ Есть RSV-данные РАНЬШЕ даты приёма: {len(early_months)} мес. "
                 f"({first[1]:02d}.{first[0]}–{last[1]:02d}.{last[0]}) — в таблице они не показаны. "
                 f"Если сотрудник принят повторно или дата указана неверно — поправьте её."
             )
@@ -1151,19 +1179,19 @@ class HistoryWindow(QMainWindow):
             return
         qd = self.hire_date_edit.date()
         if qd == self.hire_date_edit.minimumDate():
-            QMessageBox.warning(self, "Дата не указана", "Выберите дату устройства и повторите.")
+            QMessageBox.warning(self, "Дата не указана", "Выберите дату приёма на работу и повторите.")
             return
         date_str = f"{qd.year():04d}-{qd.month():02d}-{qd.day():02d}"
         try:
             hr.save_hire_date_override(self.current_tn, date_str)
         except ValueError as exc:
-            QMessageBox.warning(self, "Некорректная дата устройства", str(exc))
+            QMessageBox.warning(self, "Некорректная дата приёма", str(exc))
             return
         except hr.OverrideFileError as exc:
             QMessageBox.critical(self, "Файл ручных правок недоступен", str(exc))
             return
         self.select_employee(self.current_tn)
-        self._flash_status(f"Дата устройства сохранена: {qd.toString('dd.MM.yyyy')}")
+        self._flash_status(f"Дата приёма сохранена: {qd.toString('dd.MM.yyyy')}")
 
     # ------------------------------------------------------------------
     # Таблица
@@ -1241,8 +1269,9 @@ class HistoryWindow(QMainWindow):
                 # Кладём в month_rows, чтобы она сворачивалась вместе с месяцами.
                 qt_block["month_rows"].append(self.add_column_header_row())
 
+                leave_classes = (block["leave"] or {}).get("mixed_month_leave_class", {})
                 for r in block["month_rows"]:
-                    qt_block["month_rows"].append(self.add_month_row(r, tint=tint))
+                    qt_block["month_rows"].append(self.add_month_row(r, tint=tint, leave_classes=leave_classes))
 
                 self.finish_work_year_block(block)
 
@@ -1341,10 +1370,17 @@ class HistoryWindow(QMainWindow):
             # Enter/Space на заголовке рабочего года сворачивает/разворачивает его
             # (раньше — только клик мышью). Пока открыт редактор ячейки, клавиши идут в него,
             # а не в таблицу, поэтому правка значений не затрагивается.
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
-                block = self.header_row_to_block.get(self.table.currentRow())
-                if block is not None:
+            block = self.header_row_to_block.get(self.table.currentRow())
+            if block is not None:
+                key = event.key()
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
                     self.set_block_collapsed(block, not block["collapsed"])
+                    return True
+                if key == Qt.Key_Left and not block["collapsed"]:      # ← свернуть
+                    self.set_block_collapsed(block, True)
+                    return True
+                if key == Qt.Key_Right and block["collapsed"]:         # → развернуть
+                    self.set_block_collapsed(block, False)
                     return True
         return super().eventFilter(obj, event)
 
@@ -1353,6 +1389,10 @@ class HistoryWindow(QMainWindow):
         if block is None:
             return
         self.set_block_collapsed(block, not block["collapsed"])
+
+    def toggle_all_blocks(self, collapse: bool) -> None:
+        for block in self.year_blocks:
+            self.set_block_collapsed(block, collapse)
 
     def set_block_collapsed(self, block: dict, collapsed: bool) -> None:
         block["collapsed"] = collapsed
@@ -1434,7 +1474,7 @@ class HistoryWindow(QMainWindow):
                 "⚠",
                 f'Сумма дней ({leave_entry["total_days"]:.0f}) больше нормы рабочих дней графика '
                 f'({kol_rd_total:.0f}) — возможно, отпуск указан в календарных днях или норма '
-                f'графика занижена. «Вышло» ограничено нормой класса, результат стоит проверить.',
+                f'графика занижена. Начисленное ограничено нормой класса, результат стоит проверить.',
                 ui.NOTE_WARN,
             )
 
@@ -1446,7 +1486,7 @@ class HistoryWindow(QMainWindow):
             note(
                 "⚠",
                 f"Нет RSV-файла за: {months_txt}. Эти месяцы учтены как «вредности нет» "
-                f"(норма дней — оценка), поэтому «вышло» может быть занижено.",
+                f"(норма дней — оценка), поэтому начисленный отпуск может быть занижен.",
                 ui.NOTE_WARN,
             )
 
@@ -1460,28 +1500,35 @@ class HistoryWindow(QMainWindow):
 
         for y_m, m_m, split in leave_entry.get("mixed_class_months", []):
             parts = ", ".join(f"{c:.1f} — {d:.0f} дн." for c, d in sorted(split.items()))
-            usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
+            # Класс, к которому РЕАЛЬНО отнесён отпуск месяца, считает history_reader
+            # (преобладающий за рабочий год). Берём его, а не «максимум дней в этом месяце» —
+            # иначе на экране один класс, а в расчёте другой.
+            usual = leave_entry.get("mixed_month_leave_class", {}).get((y_m, m_m))
+            if usual is None:
+                usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
             note(
                 "Инфо",
                 f"Смена класса в {m_m:02d}.{y_m}: дни вредности {parts} Отпуск и «по среднему» "
-                f"этого месяца отнесены к классу {usual:.1f}.",
+                f"этого месяца отнесены к классу {usual:.1f} — он преобладает за рабочий год "
+                f"по сумме дней вредности.",
                 ui.NOTE_CLASS_CHANGE,
             )
 
         if len(classes) > 1:
             # Несколько классов за раб. год — показываем разбивку сложения по каждому,
-            # чтобы было видно, из чего сложилось "положено" и "вышло".
-            polozheno_parts = " + ".join(f'{c["norm"]:.0f}' for c in classes)
-            vyshlo_parts = " + ".join(f'{c["vyshlo"]:.2f}' for c in classes)
+            # чтобы было видно, из чего сложились «норма за год» и «начислено».
+            norm_parts = " + ".join(f'{c["norm"]:.0f}' for c in classes)
+            accrued_parts = " + ".join(fmt_num(c["vyshlo"]) for c in classes)
             summary_text = (
-                f'Отпуск за вредность: положено {polozheno_parts} = {leave_entry["polozheno_total"]:.0f} дн., '
-                f'вышло {vyshlo_parts} = {leave_entry["vyshlo_total"]:.2f} → '
-                f'{leave_entry["vyshlo_total_rounded"]} дн.'
+                f'Отпуск за вредность: норма за год {norm_parts} = {leave_entry["polozheno_total"]:.0f} дн.  ·  '
+                f'начислено пропорционально отработанному {accrued_parts} = '
+                f'{fmt_num(leave_entry["vyshlo_total"])} → {leave_entry["vyshlo_total_rounded"]} дн.'
             )
         else:
             summary_text = (
-                f'Отпуск за вредность: положено {leave_entry["polozheno_total"]:.0f} дн., '
-                f'вышло {leave_entry["vyshlo_total"]:.2f} → {leave_entry["vyshlo_total_rounded"]} дн.'
+                f'Отпуск за вредность: норма за год {leave_entry["polozheno_total"]:.0f} дн.  ·  '
+                f'начислено пропорционально отработанному {fmt_num(leave_entry["vyshlo_total"])} '
+                f'→ {leave_entry["vyshlo_total_rounded"]} дн.'
             )
 
         note("ОТПУСК", summary_text, ui.SUMMARY)
@@ -1500,7 +1547,7 @@ class HistoryWindow(QMainWindow):
     # Подписи полей для тултипа "было / стало" у переопределённых ячеек.
     FIELD_LABELS = {
         "kol_rd": "Раб. дни", "vred_dni": "Вредность", "bal_vredn": "Класс",
-        "otp_dni": "Отпуск", "otp_bud_m": "О/б/м", "po_sredn": "По средн.",
+        "otp_dni": "Отпуск", "otp_bud_m": "О/б/м", "po_sredn": "По среднему",
     }
 
     @staticmethod
@@ -1530,7 +1577,7 @@ class HistoryWindow(QMainWindow):
         source = "в RSV было" if has_data else "было (авто)"
         return f"{label}: {source} {was} → вручную изменено на {now}"
 
-    def add_month_row(self, r, tint: QColor | None = None) -> int:
+    def add_month_row(self, r, tint: QColor | None = None, leave_classes: dict | None = None) -> int:
         row_idx = self.table.rowCount()
         self.table.insertRow(row_idx)
 
@@ -1576,7 +1623,7 @@ class HistoryWindow(QMainWindow):
             str(int(hr._nz(r["po_sredn"]))),
             str(round(hr._nz(r["monthly_total"]))),
             "" if r["bal_vredn_effective"] in (None,) or (isinstance(r["bal_vredn_effective"], float) and r["bal_vredn_effective"] != r["bal_vredn_effective"]) else str(r["bal_vredn_effective"]),
-            "" if r["tar1"] in (None,) or (isinstance(r["tar1"], float) and r["tar1"] != r["tar1"]) else f'{r["tar1"]:.2f}',
+            "" if r["tar1"] in (None,) or (isinstance(r["tar1"], float) and r["tar1"] != r["tar1"]) else fmt_num(r["tar1"]),
         ]
         year, month = int(r["year"]), int(r["month"])
 
@@ -1671,11 +1718,16 @@ class HistoryWindow(QMainWindow):
                 split = hr.month_class_split(r)
                 if split:
                     parts = "; ".join(f"{c:.1f} — {d:.0f} дн." for c, d in sorted(split.items()))
-                    usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
+                    # Класс, к которому реально отнесён отпуск месяца, считает history_reader
+                    # (преобладающий за рабочий год) — показываем его, а не «максимум дней в месяце».
+                    usual = (leave_classes or {}).get((int(year), int(month)))
+                    if usual is None:
+                        usual = max(split.items(), key=lambda kv: (kv[1], kv[0]))[0]
                     self._set_tip(
                         item,
                         f"Смена класса в этом месяце: {parts} В ячейке показан класс с большим числом "
-                        f"дней вредности; отпуск и «по среднему» месяца относятся к нему ({usual:.1f}).",
+                        f"дней вредности за месяц; отпуск и «по среднему» месяца относятся к классу "
+                        f"{usual:.1f} — он преобладает за рабочий год по сумме дней вредности.",
                     )
 
             item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
@@ -1694,8 +1746,10 @@ class HistoryWindow(QMainWindow):
         self.table.insertRow(row_idx)
         bold = QFont()
         bold.setBold(True)
+        # «03.2024–02.2025» не влезает в колонку «Месяц» (…) — показываем «03.24–02.25», полный период в тултипе.
+        short_label = re.sub(r"(\d{2})\.(\d{2})(\d{2})", r"\1.\3", work_year_label)
         values = [
-            "ИТОГО", work_year_label, str(round(kol_rd_total)), str(round(vred_total)),
+            "ИТОГО", short_label, str(round(kol_rd_total)), str(round(vred_total)),
             "", "", "", str(round(monthly_total)), "", "",
         ]
         for col, val in enumerate(values):
@@ -1706,18 +1760,20 @@ class HistoryWindow(QMainWindow):
             item.setBackground(QColor(ui.SUMMARY[1]))
             item.setTextAlignment(int(self.COLUMN_ALIGN[col]))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            if col == 1:
+                item.setToolTip(f"Итого за рабочий год {work_year_label}")
             self.table.setItem(row_idx, col, item)
 
     def add_leave_class_row(
         self, klass: float, days: float, norm: float, kol_rd_total: float, vyshlo: float,
         capped: bool = False, vyshlo_raw: float | None = None,
     ) -> None:
-        days_txt = f"{days:.2f}".rstrip("0").rstrip(".")
-        text = f'  ↳ класс {klass}: ({days_txt} дн. × {norm:.0f}) / {kol_rd_total:.0f} раб.дн. = {vyshlo:.2f} дн. отпуска'
+        days_txt = f"{days:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+        text = f'  ↳ класс {klass}: ({days_txt} дн. × {norm:.0f}) / {kol_rd_total:.0f} раб. дн. = {fmt_num(vyshlo)} дн. отпуска'
         if capped and vyshlo_raw is not None:
             text = (
-                f'  ↳ класс {klass}: ({days_txt} дн. × {norm:.0f}) / {kol_rd_total:.0f} раб.дн. = '
-                f'{vyshlo_raw:.2f} → ограничено нормой класса: {vyshlo:.2f} дн. отпуска'
+                f'  ↳ класс {klass}: ({days_txt} дн. × {norm:.0f}) / {kol_rd_total:.0f} раб. дн. = '
+                f'{fmt_num(vyshlo_raw)} → ограничено нормой класса: {fmt_num(vyshlo)} дн. отпуска'
             )
         fg, bg = ui.NOTE_WARN if capped else ui.NOTE_PLAIN
         self.add_span_row("", text, QColor(fg), QColor(bg), wrap=True)

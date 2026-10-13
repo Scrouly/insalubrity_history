@@ -1,6 +1,6 @@
 """
-test_stage7.py — надёжность: фоновая загрузка, кэш RSV, резервные копии правок.
-Запуск: pytest test_stage7.py -v
+test_reliability.py — надёжность: фоновая загрузка, кэш RSV, резервные копии правок.
+Запуск: pytest test_reliability.py -v
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import pytest
 
 import app_env
 import history_reader as hr
-from test_data_quality import write_rsv, rec
+from helpers import write_rsv, rec
 
 
 # --- резервные копии правок -----------------------------------------------------

@@ -1,6 +1,6 @@
 """
-test_stage1.py — тесты на правки этапа 1 (синтетика, реальные данные не нужны).
-Запуск: pytest test_stage1.py -v
+test_quick_fixes.py — тесты на правки этапа 1 (синтетика, реальные данные не нужны).
+Запуск: pytest test_quick_fixes.py -v
 """
 from __future__ import annotations
 

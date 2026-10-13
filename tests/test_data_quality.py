@@ -1,6 +1,6 @@
 """
-test_stage6.py — проверки качества данных (синтетика).
-Запуск: pytest test_stage6.py -v
+test_data_quality.py — проверки качества данных (синтетика).
+Запуск: pytest test_data_quality.py -v
 """
 from __future__ import annotations
 
@@ -10,26 +10,7 @@ from openpyxl import Workbook
 
 import history_reader as hr
 import insalubrity as ins
-
-
-def write_rsv(path, rows, header_rows=2):
-    """rows — список словарей {колонка RSV: значение}; данные с 3-й строки."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    wb = Workbook()
-    ws = wb.active
-    for r in range(1, header_rows + 1):
-        ws.cell(r, 1, "шапка")
-    for i, rec in enumerate(rows):
-        for j, col in enumerate(hr.RSV_DATA_COLUMNS):
-            if col in rec and rec[col] is not None:
-                ws.cell(3 + i, j + 1, rec[col])
-    wb.save(path)
-
-
-def rec(tn, **kw):
-    base = dict(tn=tn, vop=49, vred_dni=20, kol_rd=20, bal_vredn=3.1)
-    base.update(kw)
-    return base
+from helpers import rec, write_rsv  # noqa: F401
 
 
 BLANK = {}

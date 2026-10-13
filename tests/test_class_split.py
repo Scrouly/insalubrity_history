@@ -1,6 +1,6 @@
 """
-test_stage3.py — разделение дней по классам вредности (синтетика).
-Запуск: pytest test_stage3.py -v
+test_class_split.py — разделение дней по классам вредности (синтетика).
+Запуск: pytest test_class_split.py -v
 """
 from __future__ import annotations
 
@@ -10,32 +10,7 @@ import pandas as pd
 import pytest
 
 import history_reader as hr
-
-
-def make_history(rows):
-    cols = hr.RSV_DATA_COLUMNS + ["file_year", "file_month"]
-    df = pd.DataFrame(rows).reindex(columns=cols)
-    for c in ("tn", "vop", "vred_dni", "otp_dni", "otp_bud_m", "po_sredn", "tar1", "kol_rd"):
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-    return df
-
-
-def vr(month, vred, cls, tar, tn=1, year=2025, kol=20):
-    return dict(tn=tn, vop=49, vred_dni=vred, kol_rd=kol, bal_vredn=cls, tar1=tar, file_year=year, file_month=month)
-
-
-def year_rows(skip=(), vred=20, cls=3.1, tar=0.29):
-    return [vr(m, vred, cls, tar) for m in range(1, 13) if m not in skip]
-
-
-def leave_of(rows, **kw):
-    tl = hr.build_employee_timeline(1, make_history(rows), hire_date=date(2025, 1, 10))
-    blocks = hr.build_work_year_blocks(tl, **kw)
-    return tl, blocks[0]["leave"]
-
-
-def by_class(leave):
-    return {c["klass"]: c for c in leave["classes"]}
+from helpers import by_class, leave_of, make_history, vr, year_rows  # noqa: F401
 
 
 def test_mixed_month_splits_vredn_days_between_classes():

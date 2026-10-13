@@ -1,0 +1,2 @@
+# .bat обязаны быть CRLF (cmd.exe путает метки при LF); тест test_deployment это проверяет.
+*.bat text eol=crlf
