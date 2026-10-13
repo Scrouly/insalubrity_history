@@ -75,24 +75,24 @@ QFrame#TopBar {
 
 QLabel#AppTitle {
     color: @TEXT@;
-    font-size: 25px;
+    font-size: @FS_DISPLAY@;
     font-weight: 700;
 }
 
 QLabel#AppSubtitle {
     color: @TEXT_MUTED@;
-    font-size: 14px;
+    font-size: @FS_BODY_L@;
 }
 
 QLabel#SectionTitle {
     color: @TEXT@;
-    font-size: 16px;
+    font-size: @FS_HEADING@;
     font-weight: 700;
 }
 
 QLabel#SectionHint {
     color: @TEXT_SECONDARY@;
-    font-size: 13px;
+    font-size: @FS_BODY@;
 }
 
 QFrame#Card {
@@ -109,14 +109,14 @@ QFrame#MiniCard {
 
 QLabel#FieldLabel {
     color: @TEXT_SECONDARY@;
-    font-size: 12px;
+    font-size: @FS_CAPTION@;
     font-weight: 700;
     letter-spacing: 0.4px;
 }
 
 QLabel#FieldCaption {
     color: @TEXT_MUTED@;
-    font-size: 12px;
+    font-size: @FS_CAPTION@;
 }
 
 QLineEdit, QComboBox, QSpinBox, QDateEdit {
@@ -170,7 +170,7 @@ QPushButton {
     min-height: 38px;
     border-radius: 8px;
     padding: 0 14px;
-    font-size: 14px;
+    font-size: @FS_BODY_L@;
     font-weight: 600;
 }
 
@@ -189,24 +189,24 @@ QPushButton#BrowseButton:pressed, QPushButton#UtilityButton:pressed {
     background: @GRAY_200@;
 }
 
-QPushButton#MainActionBtn {
+QPushButton#MainActionButton {
     background: @PRIMARY@;
     color: @WHITE@;
     border: none;
     min-height: 48px;
-    font-size: 14px;
+    font-size: @FS_BODY_L@;
     font-weight: 700;
 }
 
-QPushButton#MainActionBtn:hover {
+QPushButton#MainActionButton:hover {
     background: @PRIMARY_HOVER@;
 }
 
-QPushButton#MainActionBtn:pressed {
+QPushButton#MainActionButton:pressed {
     background: @PRIMARY_PRESSED@;
 }
 
-QPushButton#MainActionBtn:disabled {
+QPushButton#MainActionButton:disabled {
     background: @GRAY_200@;
     color: @GRAY_400@;
 }
@@ -235,7 +235,7 @@ QLabel#StatusPill {
     border: 1px solid @PILL_IDLE_BORDER@;
     border-radius: 11px;
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: @FS_CAPTION@;
     font-weight: 600;
 }
 
@@ -259,19 +259,19 @@ QLabel#StatusPill[mode="error"] {
 
 QLabel#MetricValue {
     color: @TEXT@;
-    font-size: 23px;
+    font-size: @FS_DISPLAY@;
     font-weight: 700;
 }
 
 QLabel#MetricTitle {
     color: @TEXT_MUTED@;
-    font-size: 12px;
+    font-size: @FS_CAPTION@;
     font-weight: 700;
 }
 
 QLabel#MetricNote {
-    color: @TEXT_FAINT@;
-    font-size: 11px;
+    color: @TEXT_MUTED@;
+    font-size: @FS_CAPTION@;
 }
 
 QProgressBar {
@@ -294,7 +294,7 @@ QTextEdit#LogArea {
     border-radius: 10px;
     padding: 10px;
     font-family: "Cascadia Mono", "Consolas", monospace;
-    font-size: 12px;
+    font-size: @FS_CAPTION@;
 }
 
 QScrollBar:vertical {
@@ -326,7 +326,7 @@ QMessageBox {
 QMessageBox QLabel {
     background: transparent;
     color: @TEXT@;
-    font-size: 13px;
+    font-size: @FS_BODY@;
 }
 
 QMessageBox QPushButton {
@@ -337,7 +337,7 @@ QMessageBox QPushButton {
     min-width: 88px;
     min-height: 34px;
     padding: 0 14px;
-    font-size: 13px;
+    font-size: @FS_BODY@;
     font-weight: 600;
 }
 
@@ -368,7 +368,7 @@ QTableWidget {
     border: 1px solid @GRAY_200@;
     border-radius: 10px;
     outline: none;
-    font-size: 13px;
+    font-size: @FS_BODY@;
 }
 
 QTableWidget::item {
@@ -384,6 +384,10 @@ QTableWidget::item:hover {
     background: @GRAY_50@;
 }
 
+QTableWidget::item:focus {
+    border: 2px solid @FOCUS@;
+}
+
 QHeaderView::section {
     background: @GRAY_50@;
     color: @TEXT_SECONDARY@;
@@ -392,7 +396,7 @@ QHeaderView::section {
     border-bottom: 1px solid @GRAY_200@;
     border-right: 1px solid @GRAY_100@;
     font-weight: 700;
-    font-size: 12px;
+    font-size: @FS_CAPTION@;
 }
 
 QTableCornerButton::section {
@@ -421,7 +425,7 @@ QPushButton#FileButton:focus {
     padding: 0 12px;
 }
 
-QPushButton#MainActionBtn:focus {
+QPushButton#MainActionButton:focus {
     border: 2px solid @PRIMARY_PRESSED@;
     padding: 0 12px;
 }
@@ -433,7 +437,7 @@ QPushButton#IconButton {
     border: 1px solid @GRAY_200@;
     padding: 0;
     min-height: 0;
-    font-size: 16px;
+    font-size: @FS_HEADING@;
 }
 
 QPushButton#IconButton:hover {
@@ -452,7 +456,7 @@ QPushButton#IconButton:focus {
 
 QLabel#AppTitleCompact {
     color: @TEXT@;
-    font-size: 20px;
+    font-size: @FS_TITLE@;
     font-weight: 700;
 }
 
@@ -463,17 +467,36 @@ QLabel#Banner {
     border: 1px solid @BANNER_BORDER@;
     border-radius: 8px;
     padding: 8px 12px;
-    font-size: 13px;
+    font-size: @FS_BODY@;
+}
+
+QPushButton#LinkButton {
+    background: transparent;
+    color: @PRIMARY@;
+    border: none;
+    text-decoration: underline;
+    padding: 2px 6px;
+    min-height: 24px;
+    font-size: @FS_BODY@;
+}
+
+QPushButton#LinkButton:hover {
+    color: @PRIMARY_HOVER@;
+}
+
+QPushButton#LinkButton:focus {
+    border: 2px solid @FOCUS@;
+    border-radius: 4px;
 }
 
 QLabel#LegendText {
     color: @TEXT_MUTED@;
-    font-size: 12px;
+    font-size: @FS_CAPTION@;
 }
 
 QLabel#SearchHint {
     color: @TEXT_MUTED@;
-    font-size: 12px;
+    font-size: @FS_CAPTION@;
 }
 
 QLabel#SearchHint[mode="error"] {
@@ -483,7 +506,7 @@ QLabel#SearchHint[mode="error"] {
 
 QLabel#EmptyState {
     color: @TEXT_MUTED@;
-    font-size: 14px;
+    font-size: @FS_BODY_L@;
     padding: 28px 12px;
 }
 """
@@ -758,7 +781,7 @@ class VrednMainWindow(QMainWindow):
         settings.addLayout(rates_grid)
 
         self.start_btn = QPushButton("Выполнить расчёт и сформировать файлы")
-        self.start_btn.setObjectName("MainActionBtn")
+        self.start_btn.setObjectName("MainActionButton")
         self.start_btn.setCursor(Qt.PointingHandCursor)
         self.start_btn.clicked.connect(self.start_calculation)
         settings.addWidget(self.start_btn)

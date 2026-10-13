@@ -335,7 +335,10 @@ def _load_json_dict(path: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        raise OverrideFileError(f"Не удалось прочитать файл {path}: {exc}") from exc
+        raise OverrideFileError(
+            f"Не удалось прочитать файл {path}: {exc}\n"
+            f"Закройте его в других программах (например, в блокноте или Excel) и повторите."
+        ) from exc
     if not text.strip():
         return {}  # пустой файл — то же, что «правок ещё нет»
     try:

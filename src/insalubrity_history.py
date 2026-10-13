@@ -76,7 +76,7 @@ COLUMN_TIPS = [
     "Рабочие дни по графику (норма месяца)",
     "Дни работы во вредных условиях",
     "Дни ежегодного отпуска",
-    "Отпуск без сохранения / за свой счёт (О/б/м)",
+    "Отпуск за будущий месяц (О/б/м)",
     "Дни, оплачиваемые по среднему",
     "Итого дней вредности за месяц (расчётное)",
     "Класс вредности: 3.1 / 3.2 / 3.3",
@@ -84,6 +84,27 @@ COLUMN_TIPS = [
 ]
 # Колонки, которые кадровик может править двойным кликом (см. HistoryWindow.EDITABLE_COLUMNS).
 EDIT_HINT = "\nДвойной клик — править; очистить ячейку — вернуть значение из RSV."
+# Максимальная ширина таблицы: на широких мониторах (2560 px и больше) последняя колонка
+# иначе растягивается на сотни пикселей пустоты, а числа оказываются далеко друг от друга.
+TABLE_MAX_WIDTH = 1300
+
+# Что значит буква-метка / оценка — в тексте ячейки для программ экрана (а не только цветом и буквой).
+STATE_LABELS = {
+    "override": "правка вручную",
+    "stale": "правка расходится с RSV",
+    "carried": "класс перенесён с прошлого месяца",
+}
+
+
+def ru_plural(n: int, one: str, few: str, many: str) -> str:
+    """Склонение по числу: 1 правка, 2 правки, 5 правок."""
+    n = abs(int(n))
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
 for _col in (2, 3, 4, 5, 6, 8):
     COLUMN_TIPS[_col] += EDIT_HINT
 
@@ -159,7 +180,7 @@ class CompactCellDelegate(QStyledItemDelegate):
             "QLineEdit {"
             " padding: 0px 8px; min-height: 0px; margin: 0px;"
             f" border: 2px solid {ui.FOCUS}; border-radius: 0px;"
-            f" background: {ui.WHITE}; color: {ui.TEXT}; font-size: 13px;"
+            f" background: {ui.WHITE}; color: {ui.TEXT}; font-size: {ui.FS_BODY}px;"
             f" selection-background-color: {ui.PRIMARY}; selection-color: {ui.WHITE};"
             "}"
         )
@@ -571,26 +592,26 @@ class HistoryWindow(QMainWindow):
         table_title.setObjectName("SectionTitle")
         table_title_row.addWidget(table_title)
         table_title_row.addStretch(1)
-        link_qss = (
-            f"QPushButton {{ background: transparent; color: {ui.PRIMARY}; border: none;"
-            f" text-decoration: underline; padding: 2px 6px; min-height: 24px; font-size: 13px; }}"
-            f"QPushButton:hover {{ color: {ui.PRIMARY_HOVER}; }}"
-            f"QPushButton:focus {{ border: 2px solid {ui.FOCUS}; border-radius: 4px; }}"
-        )
+        # Подсказка про правку — рядом с заголовком (раньше отдельной строкой под легендой).
+        self.edit_hint_lbl = QLabel("Двойной клик — править")
+        self.edit_hint_lbl.setObjectName("LegendText")
+        self.edit_hint_lbl.setToolTip("Двойной клик по ячейке — править значение; очистить ячейку — вернуть значение из RSV.")
+        table_title_row.addWidget(self.edit_hint_lbl)
         self.collapse_all_btn = QPushButton("Свернуть все годы")
         self.expand_all_btn = QPushButton("Развернуть все годы")
         for btn, collapse in ((self.collapse_all_btn, True), (self.expand_all_btn, False)):
-            btn.setStyleSheet(link_qss)
+            btn.setObjectName("LinkButton")
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(lambda _=False, c=collapse: self.toggle_all_blocks(c))
             table_title_row.addWidget(btn)
         table_layout.addLayout(table_title_row)
 
         # Легенда: что значат заливки и буквы-метки в ячейках + как править.
-        self.legend_lbl = QLabel(self._legend_html())
+        self.legend_lbl = QLabel("")
         self.legend_lbl.setObjectName("LegendText")
         self.legend_lbl.setTextFormat(Qt.RichText)
         self.legend_lbl.setWordWrap(True)
+        self.legend_lbl.setVisible(False)
         table_layout.addWidget(self.legend_lbl)
 
         # Плашка важных предупреждений по выбранному сотруднику (раньше — серая строка внизу).
@@ -652,6 +673,7 @@ class HistoryWindow(QMainWindow):
         self.table.viewport().installEventFilter(self)  # сброс подсветки колонки + пересчёт высоты строк-аннотаций
         self.table.installEventFilter(self)             # Enter/Space на заголовке года сворачивает его
         self.table.itemChanged.connect(self.on_cell_item_changed)
+        self.table.setMaximumWidth(TABLE_MAX_WIDTH)
         self.table.setAlternatingRowColors(False)  # чередование теперь по годам, не по строкам — см. add_month_row
         self.table.setMouseTracking(True)  # для корректного hover-подсвечивания строк
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -709,8 +731,11 @@ class HistoryWindow(QMainWindow):
         self._set_table_empty(self.EMPTY_HINT)
 
     @staticmethod
-    def _legend_html() -> str:
-        """Легенда статусов ячеек: цвет + буква-метка + пояснение."""
+    def _legend_html(present: set[str] | None = None) -> str:
+        """Легенда статусов ячеек: цвет + буква-метка + пояснение.
+
+        present — какие состояния реально есть в таблице сейчас (override/stale/carried/projected);
+        показываем только их. None — все (для проверок и совместимости)."""
         def chip(colors, letter: str) -> str:
             fg, bg = colors
             return (
@@ -718,18 +743,33 @@ class HistoryWindow(QMainWindow):
                 f'&nbsp;{letter}&nbsp;</span>'
             )
 
-        fg, bg = ui.STATUS_PROJECTED
         badges = ui.STATUS_BADGES
-        parts = [
-            f"{chip(ui.STATUS_OVERRIDE, badges['override'])} правка вручную",
-            f"{chip(ui.STATUS_STALE, badges['stale'])} правка расходится с RSV",
-            f"{chip(ui.STATUS_CARRIED, badges['carried'])} класс перенесён с прошлого месяца",
-            f'<span style="background-color:{bg}; color:{fg};">&nbsp;&nbsp;&nbsp;&nbsp;</span> оценка (месяца ещё нет в RSV)',
-        ]
-        return (
-            "&nbsp;&nbsp;&nbsp;&nbsp;".join(parts)
-            + "<br>Двойной клик по ячейке — править; очистить ячейку — вернуть значение из RSV."
-        )
+        everything = {
+            "override": f"{chip(ui.STATUS_OVERRIDE, badges['override'])} {STATE_LABELS['override']}",
+            "stale": f"{chip(ui.STATUS_STALE, badges['stale'])} {STATE_LABELS['stale']}",
+            "carried": f"{chip(ui.STATUS_CARRIED, badges['carried'])} {STATE_LABELS['carried']}",
+            # Знак «≈» вместо пустой цветной плашки: бледно-зелёная заливка почти не видна на белом.
+            "projected": f"{chip(ui.STATUS_PROJECTED, '≈')} оценка (месяца ещё нет в RSV)",
+        }
+        keys = [k for k in everything if present is None or k in present]
+        return "&nbsp;&nbsp;&nbsp;&nbsp;".join(everything[k] for k in keys)
+
+    def _update_legend(self) -> None:
+        """Показывает в легенде только те состояния, что есть у выбранного сотрудника."""
+        by_letter = {letter: key for key, letter in ui.STATUS_BADGES.items()}
+        present: set[str] = set()
+        for row in range(self.table.rowCount()):
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                if item is None:
+                    continue
+                key = by_letter.get(item.data(BADGE_ROLE))
+                if key in STATE_LABELS:
+                    present.add(key)
+                if col == 1 and ("(оценка)" in item.text() or "(нет файла)" in item.text()):
+                    present.add("projected")
+        self.legend_lbl.setText(self._legend_html(present))
+        self.legend_lbl.setVisible(bool(present))
 
 
     # ------------------------------------------------------------------
@@ -1048,6 +1088,25 @@ class HistoryWindow(QMainWindow):
             self._set_status(self._base_status or "Готово", "idle", "\n".join(self._load_messages))
         self._flash_text = ""
 
+    @staticmethod
+    def _zero_norm_months(blocks: list) -> list[tuple[int, int]]:
+        """Месяцы, где в RSV есть запись и дни вредности, а норма рабочих дней = 0
+        (после отмены автоподстановки они остаются как в RSV и искажают итог года)."""
+        def num(value) -> float:
+            try:
+                x = float(value)
+            except (TypeError, ValueError):
+                return 0.0
+            return 0.0 if x != x else x          # NaN -> 0
+
+        found: list[tuple[int, int]] = []
+        for block in blocks:
+            for r in block["month_rows"]:
+                if (hr._flag(r.get("has_data", False)) and not hr._flag(r.get("is_projected", False))
+                        and num(r.get("kol_rd")) == 0 and num(r.get("vred_dni")) > 0):
+                    found.append((int(r["year"]), int(r["month"])))
+        return sorted(set(found))
+
     def _set_banner(self, text: str) -> None:
         """Плашка важных предупреждений над таблицей (пустой текст — скрыть)."""
         self.banner_lbl.setText(text)
@@ -1208,6 +1267,7 @@ class HistoryWindow(QMainWindow):
             self.year_blocks = []
             self.header_row_to_block = {}
             self._set_banner("")
+            self.legend_lbl.setVisible(False)
 
             if self.history is None or self.history.empty:
                 self._set_table_empty(
@@ -1243,10 +1303,20 @@ class HistoryWindow(QMainWindow):
             )
             banner_parts = [self._early_warning, getattr(self, "_term_note", "")]
             if stale_count:
+                verb = "расходится" if stale_count % 10 == 1 and stale_count % 100 != 11 else "расходятся"
                 banner_parts.append(
-                    f"⚠ Ручных правок, расходящихся с появившимся RSV: {stale_count} (ячейки с меткой "
-                    f"«{ui.STATUS_BADGES['stale']}»). Введите значение заново, чтобы подтвердить, "
-                    f"или очистите ячейку, чтобы взять значение из RSV."
+                    f"⚠ {stale_count} {ru_plural(stale_count, 'правка', 'правки', 'правок')} вручную {verb} "
+                    f"с RSV (ячейки с меткой «{ui.STATUS_BADGES['stale']}»). Введите значение заново, "
+                    f"чтобы оставить свою, или очистите ячейку — тогда возьмётся значение из RSV."
+                )
+            zero_norm = self._zero_norm_months(blocks)
+            if zero_norm:
+                shown = ", ".join(f"{m:02d}.{y}" for y, m in zero_norm[:4])
+                more = f" и ещё {len(zero_norm) - 4}" if len(zero_norm) > 4 else ""
+                banner_parts.append(
+                    f"⚠ В RSV за {shown}{more} есть дни вредности, а норма рабочих дней равна 0: "
+                    f"такой месяц не входит в норму года, и отпуск может получиться завышенным. "
+                    f"Исправьте «Раб. дни» двойным кликом или пересчитайте RSV."
                 )
             self._set_banner("\n".join(part for part in banner_parts if part))
 
@@ -1284,6 +1354,7 @@ class HistoryWindow(QMainWindow):
 
             if scroll_pos is not None:
                 self.table.verticalScrollBar().setValue(scroll_pos)
+            self._update_legend()
         finally:
             self._suppress_item_changed = False
 
@@ -1405,8 +1476,11 @@ class HistoryWindow(QMainWindow):
     HEADER_TINTS = tuple(QColor(c) for c in ui.YEAR_HEADER_TINTS)
 
     def add_year_header_row(self, work_year_label: str, month_count: int, bg: QColor) -> int:
-        text = f"Рабочий год {work_year_label}   ·   {month_count} мес.   (клик или Enter — свернуть/развернуть)"
-        return self.add_span_row("▼", text, QColor(ui.TEXT), bg)
+        text = f"Рабочий год {work_year_label}   ·   {month_count} мес."
+        return self.add_span_row(
+            "▼", text, QColor(ui.TEXT), bg,
+            tooltip="Щелчок, Enter или Пробел — свернуть/развернуть год (← свернуть, → развернуть)",
+        )
 
     def add_column_header_row(self) -> int:
         """Мини-шапка с названиями колонок внутри блока рабочего года: название
@@ -1460,15 +1534,16 @@ class HistoryWindow(QMainWindow):
 
         # Строки-аннотации: метка в первой колонке — слово или значок (а не только цвет),
         # текст переносится по словам.
-        def note(label: str, text: str, colors) -> None:
-            self.add_span_row(label, text, QColor(colors[0]), QColor(colors[1]), wrap=True)
+        def note(label: str, text: str, colors, emphasis: bool = False) -> None:
+            self.add_span_row(label, text, QColor(colors[0]), QColor(colors[1]), wrap=True, emphasis=emphasis)
 
         if leave_entry.get("days_exceed_norm"):
             note(
                 "⚠",
                 f'Сумма дней ({leave_entry["total_days"]:.0f}) больше нормы рабочих дней графика '
                 f'({kol_rd_total:.0f}) — возможно, отпуск указан в календарных днях или норма '
-                f'графика занижена. Начисленное ограничено нормой класса, результат стоит проверить.',
+                f'графика занижена. Проверьте колонку «Раб. дни»: месяцы с нулевой нормой в итог не входят. '
+                f'Начисленное ограничено нормой класса, результат стоит проверить.',
                 ui.NOTE_WARN,
             )
 
@@ -1525,7 +1600,7 @@ class HistoryWindow(QMainWindow):
                 f'→ {leave_entry["vyshlo_total_rounded"]} дн.'
             )
 
-        note("ОТПУСК", summary_text, ui.SUMMARY)
+        note("ОТПУСК", summary_text, ui.SUMMARY, emphasis=True)   # итог — главное в блоке года
 
     # Столбец → поле таймлайна, для тех колонок, что кадровик может править.
     # Правка теперь разрешена на ЛЮБОМ месяце, включая уже посчитанный по
@@ -1555,6 +1630,9 @@ class HistoryWindow(QMainWindow):
         """Буква-метка статуса в углу ячейки (рисует CompactCellDelegate)."""
         item.setData(BADGE_ROLE, ui.STATUS_BADGES[key])
         item.setData(BADGE_COLOR_ROLE, colors[0])
+        label = STATE_LABELS.get(key)
+        if label:
+            item.setData(Qt.AccessibleTextRole, f"{item.text()}, {label}")
 
     @staticmethod
     def _fmt_field_value(field: str, value) -> str:
@@ -1580,7 +1658,7 @@ class HistoryWindow(QMainWindow):
         stale_fields = r.get("stale_fields") or {}
         is_projected = bool(r.get("is_projected", False))
 
-        base_color = QColor(ui.TEXT) if has_data else QColor(ui.TEXT_FAINT)
+        base_color = QColor(ui.TEXT) if has_data else QColor(ui.TEXT_MUTED)
         # Прогноз — не точечная правка одного поля, а вся строка целиком,
         # поэтому вместо цвета текста заливаем всю строку светло-зелёным
         # (перебивает обычное чередование по годам) — так заметнее, чем
@@ -1754,7 +1832,7 @@ class HistoryWindow(QMainWindow):
         fg, bg = ui.NOTE_WARN if capped else ui.NOTE_PLAIN
         self.add_span_row("", text, QColor(fg), QColor(bg), wrap=True)
 
-    def _make_wrapped_label(self, text: str, fg: QColor, bg: QColor) -> QLabel:
+    def _make_wrapped_label(self, text: str, fg: QColor, bg: QColor, emphasis: bool = False) -> QLabel:
         """Текст аннотации с переносом слов. Ставится поверх объединённой ячейки и пропускает
         клики/наведение сквозь себя, так что строка ведёт себя как обычная (тултип, выбор)."""
         label = QLabel(text)
@@ -1763,13 +1841,15 @@ class HistoryWindow(QMainWindow):
         label.setContentsMargins(10, 6, 10, 6)
         label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         label.setStyleSheet(
-            f"QLabel {{ background-color: {bg.name()}; color: {fg.name()}; font-size: 13px; }}"
+            f"QLabel {{ background-color: {bg.name()}; color: {fg.name()}; "
+            f"font-size: {ui.FS_HEADING if emphasis else ui.FS_BODY}px{'; font-weight: 600' if emphasis else ''}; }}"
         )
         return label
 
     def add_span_row(
         self, col0_text: str, span_text: str, fg_color: QColor,
         bg_color: QColor | None = None, tooltip: str | None = None, wrap: bool = False,
+        emphasis: bool = False,
     ) -> int:
         """Строка-аннотация: короткая метка в первой колонке + текст на всю остальную ширину.
 
@@ -1812,7 +1892,8 @@ class HistoryWindow(QMainWindow):
 
         if wrap:
             label = self._make_wrapped_label(
-                span_text, fg_color, bg_color if bg_color is not None else QColor(ui.WHITE)
+                span_text, fg_color, bg_color if bg_color is not None else QColor(ui.WHITE),
+                emphasis=emphasis,
             )
             self.table.setCellWidget(row_idx, 1, label)
             self._wrapped_rows.append((row_idx, label))
