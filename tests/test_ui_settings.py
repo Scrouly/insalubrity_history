@@ -89,14 +89,18 @@ def test_window_size_and_columns_are_restored_next_time(hist):
     assert w2.table.columnWidth(2) == 222
 
 
-def test_collapsed_top_panel_is_remembered(hist):
+def test_employee_panel_is_open_on_every_launch_even_if_it_was_collapsed(hist):
     h, make = hist
     w1 = make()
     w1.set_top_collapsed(True)
+    assert w1.top_body.isHidden()                      # в рамках сессии сворачивать по-прежнему можно
     w1.close()
     w1.wait_for_load()
+    h.ui_settings().setValue("ui/top_collapsed", True)  # «хвост» от старой версии, где состояние запоминалось
+    h.ui_settings().sync()
     w2 = make()
-    assert not w2.top_body.isVisible() or w2.top_body.isHidden()
+    assert not w2.top_body.isHidden()
+    assert w2.top_toggle_btn.text() == "▾"
 
 
 def test_changes_are_saved_without_closing_the_window(hist, tmp_path):

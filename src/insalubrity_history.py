@@ -296,10 +296,8 @@ class HistoryWindow(QMainWindow):
         window_state = settings.value("window/state")
         if window_state is not None:
             self.restoreState(window_state)
-        if str(settings.value("ui/top_collapsed", "false")).lower() == "true":
-            self.top_body.setVisible(False)
-            self._apply_top_toggle_state(True)
-            self.refresh_top_title()
+        # Блок «Сотрудник» при каждом запуске открыт (сотрудника всё равно нужно выбрать),
+        # поэтому его свёрнутость между запусками не запоминаем.
         header_state = settings.value("table/header_state_v2")
         if header_state is not None:
             self.table.horizontalHeader().restoreState(header_state)
@@ -744,9 +742,6 @@ class HistoryWindow(QMainWindow):
         self.top_body.setVisible(not collapsed)
         self._apply_top_toggle_state(collapsed)
         self.refresh_top_title()
-        settings = ui_settings()
-        settings.setValue("ui/top_collapsed", collapsed)
-        settings.sync()
         # Верхняя панель ужалась — отдаём освободившееся место таблице.
         QTimer.singleShot(0, lambda: self.main_splitter.setSizes([1, 5000]))
 
