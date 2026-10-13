@@ -725,7 +725,6 @@ class HistoryWindow(QMainWindow):
         parts = [
             f"{chip(ui.STATUS_OVERRIDE, badges['override'])} правка вручную",
             f"{chip(ui.STATUS_STALE, badges['stale'])} правка расходится с RSV",
-            f"{chip(ui.STATUS_FIX, badges['fix'])} «раб. дни» исправлены автоматически",
             f"{chip(ui.STATUS_CARRIED, badges['carried'])} класс перенесён с прошлого месяца",
             f'<span style="background-color:{bg}; color:{fg};">&nbsp;&nbsp;&nbsp;&nbsp;</span> оценка (месяца ещё нет в RSV)',
         ]
@@ -1584,8 +1583,6 @@ class HistoryWindow(QMainWindow):
         has_data = bool(r["has_data"])
         overridden_fields = r.get("overridden_fields") or {}
         stale_fields = r.get("stale_fields") or {}
-        is_data_fix = bool(r.get("is_data_fix", False))
-        data_fix_note = r.get("data_fix_note")
         is_projected = bool(r.get("is_projected", False))
 
         base_color = QColor(ui.TEXT) if has_data else QColor(ui.TEXT_FAINT)
@@ -1644,10 +1641,6 @@ class HistoryWindow(QMainWindow):
             item.setData(GRID_ROLE, True)
             field = self.EDITABLE_COLUMNS.get(col)
             is_overridden_here = field is not None and field in overridden_fields
-            # Автопочинка (сейчас — только колонка kol_rd, см. fix_zero_kol_rd_months)
-            # красится отдельным акцентом, но ручная правка кадровика на том
-            # же поле имеет приоритет над этой пометкой.
-            is_fixed_here = field == "kol_rd" and is_data_fix and not is_overridden_here
             # "Балл" перенесён по ffill, а не подтверждён RSV в этом месяце —
             # свой акцент, в том числе и внутри прогнозных (зелёных) строк:
             # для них класс тоже всегда перенесённый, раз в самом месяце
@@ -1680,22 +1673,10 @@ class HistoryWindow(QMainWindow):
                         f"чтобы взять значение из RSV."
                     )
                 self._set_tip(item, tip)
-            elif is_fixed_here:
-                # Автоматическая починка сбоя календаря (kol_rd=0 в RSV при
-                # реально отработанном месяце) — свой акцент заливкой,
-                # отличимый и от жёлтой ручной правки, и от зелёного прогноза.
-                item.setForeground(QColor(ui.STATUS_FIX[0]))
-                item.setBackground(QColor(ui.STATUS_FIX[1]))
-                self._set_badge(item, "fix", ui.STATUS_FIX)
-                bold_font = QFont()
-                bold_font.setBold(True)
-                item.setFont(bold_font)
-                if isinstance(data_fix_note, str) and data_fix_note:
-                    self._set_tip(item, data_fix_note)
             elif is_carried_here:
                 # Класс вредности перенесён с более раннего месяца (ffill),
                 # а не подтверждён RSV-строкой в ЭТОМ месяце — фиолетовый
-                # акцент, отличимый от жёлтой правки/бирюзовой починки/
+                # акцент, отличимый от жёлтой правки и
                 # зелёного прогноза.
                 item.setForeground(QColor(ui.STATUS_CARRIED[0]))
                 item.setBackground(QColor(ui.STATUS_CARRIED[1]))

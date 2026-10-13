@@ -132,3 +132,45 @@ def test_there_is_exactly_one_refresh_button_even_with_settings_open(hist):
     refreshers = [b for b in w.findChildren(QPushButton) if "Обновить данные" in b.text()]
     assert len(refreshers) == 1 and not refreshers[0].isHidden()
     assert refreshers[0].toolTip().endswith("(F5)")            # остался тот, что рядом со сводкой путей
+
+
+# --- «А»: автоподстановка раб. дней при kol_rd=0 в RSV (has_data=True) отменена ---------------
+
+def _zero_norm_history():
+    rows = [vr(m, 20, 3.1, 0.29, year=2025) for m in range(1, 13) if m != 2]
+    rows.append(vr(2, 0, 3.1, 0.29, year=2025, kol=0))        # в RSV запись есть, а норма дней = 0
+    return make_history(rows)
+
+
+def test_month_with_record_but_zero_norm_keeps_zero_and_is_not_marked_fixed():
+    import history_reader as hr
+    tl = hr.build_employee_timeline(1, _zero_norm_history(), hire_date=date(2025, 1, 10))
+    feb = tl[(tl["year"] == 2025) & (tl["month"] == 2)].iloc[0]
+    assert bool(feb["has_data"]) and feb["kol_rd"] == 0         # осталось как в RSV, не среднее
+    assert not tl["is_data_fix"].any()                          # метки «А» нет нигде
+
+
+def test_zero_norm_month_changes_the_yearly_denominator_as_in_rsv():
+    import history_reader as hr
+    tl = hr.build_employee_timeline(1, _zero_norm_history(), hire_date=date(2025, 1, 10))
+    block = hr.build_work_year_blocks(tl)[0]
+    assert block["kol_rd_total"] == 11 * 20                     # без подставленных 20 дней за февраль
+
+
+def test_months_without_any_record_are_still_estimated_as_projected():
+    import history_reader as hr
+    rows = [vr(m, 20, 3.1, 0.29, year=2025) for m in range(1, 13) if m != 5]    # мая в RSV нет совсем
+    tl = hr.build_employee_timeline(1, make_history(rows), hire_date=date(2025, 1, 10))
+    may = tl[(tl["year"] == 2025) & (tl["month"] == 5)].iloc[0]
+    assert bool(may["is_projected"]) and may["kol_rd"] == 20    # вторая функция fix_zero осталась
+
+
+def test_window_has_no_auto_fix_legend_or_cell_accent(hist):
+    h, make = hist
+    w = make()
+    assert w.wait_for_load()
+    w.history = _zero_norm_history()
+    w.render_timeline(1, date(2025, 1, 10))
+    from PyQt5.QtWidgets import QLabel
+    assert not any("исправлены автоматически" in lbl.text() for lbl in w.findChildren(QLabel))
+    assert "А" not in h.ui.STATUS_BADGES.values()

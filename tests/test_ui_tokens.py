@@ -35,7 +35,6 @@ TEXT_PAIRS = [
     ("мини-шапка года", *ui.MINI_HEADER),
     ("ручная правка", *ui.STATUS_OVERRIDE),
     ("устаревшая правка", *ui.STATUS_STALE),
-    ("автопочинка", *ui.STATUS_FIX),
     ("класс перенесён", *ui.STATUS_CARRIED),
     ("оценка (прогноз)", *ui.STATUS_PROJECTED),
     ("предупреждение", *ui.NOTE_WARN),
@@ -76,7 +75,7 @@ def test_contrast_formula_matches_wcag_reference_values():
 
 def test_status_badges_are_distinct_so_color_is_not_the_only_cue():
     badges = list(ui.STATUS_BADGES.values())
-    assert len(badges) == len(set(badges)) == 4
+    assert len(badges) == len(set(badges)) == len(ui.STATUS_BADGES) == 3   # Р, !, →
 
 
 def test_every_qss_token_is_resolved_and_no_raw_colors_remain():

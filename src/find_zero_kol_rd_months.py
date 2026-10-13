@@ -1,14 +1,15 @@
 """
 find_zero_kol_rd_months.py
 ===========================
-Отчёт: у каких сотрудников и в каких месяцах сработала автопочинка
-"kol_rd=0 при has_data=True" (см. history_reader.fix_zero_kol_rd_months) —
-то есть за месяц ЕСТЬ реальная RSV-запись, но норма рабочих дней по графику
-изначально была 0 (сбой сопоставления с kalend.dbf), и её заменили средним.
+Отчёт: у каких сотрудников и в каких месяцах за месяц ЕСТЬ реальная RSV-запись
+(has_data=True), но норма рабочих дней по графику равна 0 (сбой сопоставления с
+kalend.dbf). Такие месяцы автоматически НЕ исправляются (см.
+history_reader.fix_zero_kol_rd_months) — в расчёте остаётся 0, как в RSV, поэтому
+отчёт показывает, где это влияет на итог и что стоит поправить вручную.
 
 Никакой отдельной логики поиска не пишет — просто вызывает
 build_employee_timeline() для каждого сотрудника (ровно ту же функцию, что
-использует GUI) и смотрит на флаг is_data_fix в результате.
+использует GUI) и отбирает месяцы с has_data=True и kol_rd=0.
 
 Запуск (пути берутся из .env — того же файла, что использует GUI):
     python find_zero_kol_rd_months.py
@@ -63,33 +64,31 @@ def find_all(data_dir: Path, out_dir: Path) -> pd.DataFrame:
         timeline = hr.build_employee_timeline(
             tn, history, hire_date=hire_date, termination_date=termination_date
         )
-        if timeline.empty or "is_data_fix" not in timeline.columns:
+        if timeline.empty:
             continue
 
-        fixed = timeline.loc[timeline["is_data_fix"]]
-        for _, row in fixed.iterrows():
+        zero_norm = timeline.loc[timeline["has_data"].astype(bool) & (timeline["kol_rd"].fillna(0) == 0)]
+        for _, row in zero_norm.iterrows():
             found_rows.append({
                 "tn": tn,
                 "fio": fio,
                 "год": int(row["year"]),
                 "месяц": int(row["month"]),
-                "kol_rd_было": 0,
-                "kol_rd_стало": round(float(row["kol_rd"]), 2),
-                "vred_dni (не тронуто)": row["vred_dni"],
-                "пояснение": row.get("data_fix_note", ""),
+                "kol_rd": 0,
+                "vred_dni": row["vred_dni"],
             })
 
     report = pd.DataFrame(found_rows)
 
     print()
     if report.empty:
-        print("Ни одного сбойного месяца (kol_rd=0 при has_data=True) не найдено — всё чисто.")
+        print("Месяцев с kol_rd=0 при наличии записи в RSV не найдено — всё чисто.")
     else:
         affected_people = report["tn"].nunique()
-        print(f"Найдено сбойных месяцев: {len(report)}  (у {affected_people} сотрудник(ов))")
+        print(f"Месяцев с kol_rd=0 при наличии записи в RSV: {len(report)}  (у {affected_people} сотрудник(ов))")
         print()
         with pd.option_context("display.max_rows", None, "display.width", 160):
-            print(report[["tn", "fio", "год", "месяц", "kol_rd_было", "kol_rd_стало"]]
+            print(report[["tn", "fio", "год", "месяц", "kol_rd", "vred_dni"]]
                   .sort_values(["tn", "год", "месяц"]).to_string(index=False))
 
     return report
