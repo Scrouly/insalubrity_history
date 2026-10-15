@@ -189,6 +189,37 @@ def fill_missing_calendar(df: pd.DataFrame, kalend: pd.DataFrame, log=print) -> 
     return df.drop(columns=["_period"])
 
 
+def allocate_days(exact: pd.Series, groups: pd.DataFrame) -> pd.Series:
+    """Округляет дни до целых так, чтобы сумма по группе (обычно табельный номер +
+    год + месяц) равнялась округлённой СУММЕ точных дней, а не сумме округлений.
+
+    Раньше каждая строка округлялась отдельно: при смене класса в середине месяца две
+    строки по 10,5 дня давали 11 + 11 = 22 при норме месяца 21. Теперь сумма группы
+    округляется fox_round, а недостающие единицы раздаются строкам с наибольшей дробной
+    частью (при равенстве — тем, что раньше стоят в таблице).
+
+    Группа со строками сторно (отрицательные дни) делить таким образом нельзя —
+    для неё остаётся обычное построчное fox_round.
+    """
+    out = pd.Series(0, index=exact.index, dtype="int64")
+    if exact.empty:
+        return out
+    for _, idx in groups.groupby(list(groups.columns), dropna=False).groups.items():
+        vals = exact.loc[idx].astype(float)
+        if len(vals) == 1 or (vals < 0).any():
+            out.loc[idx] = [fox_round(v) for v in vals]
+            continue
+        base = vals.map(lambda v: int(math.floor(v + FOX_ROUND_EPS)))
+        need = fox_round(float(vals.sum())) - int(base.sum())
+        out.loc[idx] = base
+        if need > 0:
+            frac = (vals - base).tolist()
+            order = sorted(range(len(vals)), key=lambda i: (-frac[i], i))
+            for i in order[:need]:
+                out.loc[vals.index[i]] += 1
+    return out
+
+
 def classify_bal_vredn(tar1: float, stavka1: float, stavka2: float, stavka3: float):
     """Классификация балла вредности (3.1 / 3.2 / 3.3)."""
     if tar1 is None or (isinstance(tar1, float) and math.isnan(tar1)):
@@ -373,10 +404,17 @@ def _do_run(
         log(f"ВНИМАНИЕ: {zero_sr_chas.sum()} запис(ей) вредности/по средн. с sr_chas=0 "
             f"(дни не рассчитаны) — tn: {bad_tns[:20]}{' …' if len(bad_tns) > 20 else ''}")
 
-    # Дни рассчитываются делением vf на уже округлённый sr_chas
-    df.loc[is_vred, "vred_dni"] = df.loc[is_vred].apply(
-        lambda r: fox_round(r["vf"] / r["sr_chas"]) if r["sr_chas"] > 0 else 0, axis=1
-    )
+    # Дни рассчитываются делением vf на уже округлённый sr_chas. Округление — по сумме
+    # месяца у сотрудника (см. allocate_days), а не по каждой строке отдельно.
+    day_keys = ["tn", "god", "mes"]
+
+    def _days(mask):
+        sub = df.loc[mask]
+        exact = sub.apply(lambda r: r["vf"] / r["sr_chas"] if r["sr_chas"] > 0 else 0.0, axis=1)
+        return allocate_days(exact, sub[day_keys])
+
+    if is_vred.any():
+        df.loc[is_vred, "vred_dni"] = _days(is_vred)
     # fox_round(), а не astype(int): последний ОБРЕЗАЕТ дробную часть (0.5 дня
     # исчезало бы совсем), тогда как вредность и "по среднему" ниже честно
     # округляются fox_round(). Нецелый vf у отпуска — редкость, но раз он
@@ -389,9 +427,8 @@ def _do_run(
             f"числом дней (vf) — округлено, а не обрезано, tn: {bad_tns[:20]}{' …' if len(bad_tns) > 20 else ''}")
     df.loc[is_otp, "otp_dni"] = df.loc[is_otp, "vf"].apply(fox_round)
     df.loc[is_otp_bud, "otp_bud_m"] = df.loc[is_otp_bud, "vf"].apply(fox_round)
-    df.loc[is_sredn, "po_sredn"] = df.loc[is_sredn].apply(
-        lambda r: fox_round(r["vf"] / r["sr_chas"]) if r["sr_chas"] > 0 else 0, axis=1
-    )
+    if is_sredn.any():
+        df.loc[is_sredn, "po_sredn"] = _days(is_sredn)
 
     # 6. Тариф и балл вредности
     df["tar1"] = df.apply(

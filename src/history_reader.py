@@ -185,6 +185,14 @@ def empty_history() -> pd.DataFrame:
     return pd.DataFrame(columns=RSV_DATA_COLUMNS + ["file_year", "file_month"])
 
 
+def _normalize_class_value(v):
+    """Текстовый класс из RSV («3,1», " 3.2 ") -> строка с точкой, которую поймёт
+    pd.to_numeric; числа и пустые значения остаются как есть."""
+    if isinstance(v, str):
+        return v.strip().replace(",", ".")
+    return v
+
+
 def build_history(out_dir: Path, log=print) -> pd.DataFrame:
     """Собирает единый DataFrame по всем найденным rsv-файлам.
 
@@ -224,7 +232,10 @@ def build_history(out_dir: Path, log=print) -> pd.DataFrame:
     # Приведение к числам с контролем: значение, которое было в файле, но не
     # превратилось в число, раньше молча становилось NaN (для tn — строка
     # пропадала из истории сотрудника, для остальных — день обнулялся).
-    for col in ("tn", "vop", "vred_dni", "otp_dni", "otp_bud_m", "po_sredn", "tar1", "kol_rd"):
+    # Класс вредности в архивных файлах бывает текстом («3,1» с русской запятой): без
+    # приведения max() по месяцу в build_employee_timeline падал на смеси текста и чисел.
+    combined["bal_vredn"] = combined["bal_vredn"].map(_normalize_class_value)
+    for col in ("tn", "vop", "vred_dni", "otp_dni", "otp_bud_m", "po_sredn", "tar1", "kol_rd", "bal_vredn"):
         raw = combined[col]
         converted = pd.to_numeric(raw, errors="coerce")
         lost = raw.notna() & converted.isna() & ~raw.map(lambda v: isinstance(v, str) and not v.strip())
